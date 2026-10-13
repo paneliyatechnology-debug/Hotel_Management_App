@@ -1,6 +1,6 @@
 {
-    "name": "hotel_management_system",
-    "short_name": "hotel_management_system",
+    "name": "MyOwnPMS System",
+    "short_name": "MyOwnPMS",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

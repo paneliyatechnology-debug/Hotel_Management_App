@@ -1,15 +1,61 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hotel_management_system/features/check_in_wizard/presentation/pages/check_in_wizard_page.dart';
-import 'package:hotel_management_system/main.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:my_own_pms_system/core/widgets/status_badge.dart';
+import 'package:my_own_pms_system/features/check_in_wizard/data/models/check_in_form_data.dart';
+import 'package:my_own_pms_system/features/check_in_wizard/presentation/bloc/check_in_bloc.dart';
+import 'package:my_own_pms_system/features/check_in_wizard/presentation/bloc/check_in_event.dart';
+import 'package:my_own_pms_system/features/check_in_wizard/presentation/pages/check_in_wizard_page.dart';
+import 'package:my_own_pms_system/features/dashboard/domain/repositories/dashboard_repository.dart';
+import 'package:my_own_pms_system/features/dashboard/presentation/bloc/dashboard_bloc.dart';
+import 'package:my_own_pms_system/features/rooms/data/models/room_model.dart';
+import 'package:my_own_pms_system/features/rooms/presentation/bloc/rooms_bloc.dart';
+import 'package:my_own_pms_system/main.dart';
+import 'helpers/test_data.dart';
+
+Widget createWizardTestApp({RoomModel? preselectedRoom, CheckInFormData? initialFormData}) {
+  final repo = DashboardRepository(initialRooms: testRooms, initialFolios: testFolios);
+  final initData = initialFormData ??
+      (preselectedRoom != null
+          ? CheckInFormData(
+              selectedRoomId: preselectedRoom.id,
+              selectedRoomNumber: preselectedRoom.roomNumber,
+              selectedFloor: preselectedRoom.floor,
+              roomType: preselectedRoom.roomType,
+              pricePerNight: preselectedRoom.pricePerNight,
+              isRoomPreLocked: true,
+            )
+          : CheckInFormData());
+  return MultiBlocProvider(
+    providers: [
+      BlocProvider<DashboardBloc>(create: (_) => DashboardBloc(repository: repo)),
+      BlocProvider<RoomsBloc>(create: (_) => RoomsBloc(repository: repo)),
+      BlocProvider<CheckInBloc>(
+        create: (_) {
+          final bloc = CheckInBloc(repository: repo, initialFormData: initData);
+          if (initialFormData == null) {
+            bloc.add(InitCheckInWizardEvent(preselectedRoom: preselectedRoom));
+          }
+          return bloc;
+        },
+      ),
+    ],
+    child: const MaterialApp(
+      home: CheckInWizardPage(),
+    ),
+  );
+}
 
 void main() {
+  setUp(() {
+    DashboardRepository(initialRooms: testRooms, initialFolios: testFolios);
+  });
   testWidgets('2026 Mobile UI renders Front Desk Hub & Navigation cleanly', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const HotelManagementApp());
+    await tester.pumpWidget(const MyOwnPMSApp());
     await tester.pumpAndSettle();
 
     // Verify Mobile Header
@@ -20,23 +66,16 @@ void main() {
     expect(find.text('LIVE METRICS OVERVIEW'), findsOneWidget);
     expect(find.text('AVAILABLE VACANT'), findsOneWidget);
 
-    // Verify Quick Operations Slider
-    expect(find.text('QUICK OPERATIONS'), findsOneWidget);
-    expect(find.text('4-Step Check-In'), findsOneWidget);
-    expect(find.text('Govt ID Hub'), findsOneWidget);
-
-    // Scroll down to reveal Room Status Matrix & Cards
-    await tester.drag(find.byType(ListView).first, const Offset(0, -400));
+    // Scroll down to reveal Recent Check-In & Check-Out Activity
+    await tester.scrollUntilVisible(
+      find.text('RECENT CHECK-IN & CHECK-OUT'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('LIVE ROOM STATUS MATRIX'), findsOneWidget);
-    expect(find.text('#01'), findsOneWidget);
-
-    // Scroll further down to reveal In-House Folio Cards
-    await tester.drag(find.byType(ListView).first, const Offset(0, -400));
-    await tester.pumpAndSettle();
-
-    expect(find.text('RECENT IN-HOUSE FOLIOS'), findsOneWidget);
+    expect(find.text('RECENT CHECK-IN & CHECK-OUT'), findsOneWidget);
+    expect(find.text('View All'), findsOneWidget);
     expect(find.text('Niraj Vekariya'), findsOneWidget);
     expect(find.text('Vikram Mehta'), findsWidgets);
 
@@ -52,16 +91,11 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const HotelManagementApp());
+    await tester.pumpWidget(createWizardTestApp());
     await tester.pumpAndSettle();
 
-    // Tap Quick 4-Step Check-In action card
-    final checkInAction = find.text('4-Step Check-In');
-    await tester.tap(checkInAction);
-    await tester.pumpAndSettle();
-
-    // Verify Step 1 is rendered
-    expect(find.text('STEP 1 OF 3'), findsOneWidget);
+    // Verify Step 1 is rendered (Guest Profile only)
+    expect(find.text('STEP 1 OF 4'), findsOneWidget);
     expect(find.text('PRIMARY GUEST IDENTITY'), findsOneWidget);
 
     // Fill Step 1 with Quick Fill to satisfy validation
@@ -74,14 +108,33 @@ void main() {
     scaffoldMessenger.clearSnackBars();
     await tester.pumpAndSettle();
 
-    // Continue to Step 2
+    // Continue to Step 2 (Stay & Room Allocation)
     final continueBtn = find.text('Continue to Step 2');
     await tester.ensureVisible(continueBtn);
     await tester.tap(continueBtn, warnIfMissed: false);
     await tester.pumpAndSettle();
 
     // Verify Step 2 is rendered
-    expect(find.text('Step 2: Room Allocation & Stay Duration'), findsOneWidget);
+    expect(find.textContaining('Room Allocation & Stay Duration'), findsOneWidget);
+
+    // Continue to Step 3 (Billing & Settlement)
+    final continueToStep3Btn = find.text('Continue to Step 3');
+    await tester.ensureVisible(continueToStep3Btn);
+    await tester.tap(continueToStep3Btn, warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    // Verify Step 3: Billing & Settlement is rendered
+    expect(find.text('Tariff Calculation & Advance Settlement'), findsOneWidget);
+    expect(find.text('Nightly Tariff Rate (₹)'), findsOneWidget);
+    expect(find.text('Payment Method'), findsOneWidget);
+
+    // Continue to Step 4 (Review & Check-In)
+    final continueToStep4Btn = find.text('Continue to Step 4');
+    await tester.tap(continueToStep4Btn);
+    await tester.pumpAndSettle();
+
+    // Verify Step 4 is rendered
+    expect(find.text('Step 4: Review & Check-In'), findsOneWidget);
   });
 
   testWidgets('Category Rooms Flow: Click Family Room -> Show all room numbers -> Select Room -> Guest Form with locked room', (WidgetTester tester) async {
@@ -89,15 +142,17 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const HotelManagementApp());
+    await tester.pumpWidget(const MyOwnPMSApp());
+    await tester.pumpAndSettle();
+
+    // Switch to Rooms Tab where room inventory and categories reside
+    await tester.tap(find.text('Rooms'));
     await tester.pumpAndSettle();
 
     // Scroll down to reveal Room Categories
-    await tester.drag(find.byType(ListView).first, const Offset(0, -350));
-    await tester.pumpAndSettle();
-
-    // Tap on Family Room Card
     final familyRoomCard = find.text('FAMILY ROOM').first;
+    await tester.ensureVisible(familyRoomCard);
+    await tester.pumpAndSettle();
     expect(familyRoomCard, findsOneWidget);
     await tester.tap(familyRoomCard);
     await tester.pumpAndSettle();
@@ -105,7 +160,7 @@ void main() {
     // Verify CategoryRoomsPage is opened
     expect(find.text('FAMILY ROOMS INVENTORY'), findsNothing); // Checks category name in title
     expect(find.text('Mayal Resort 2 • Room Number Inventory'), findsOneWidget);
-    expect(find.text('Max 4 Guests per Unit'), findsOneWidget);
+    expect(find.textContaining('AVAILABLE ROOM NUMBERS'), findsOneWidget);
 
     // Verify multiple family room numbers are displayed
     expect(find.text('#01'), findsOneWidget);
@@ -118,7 +173,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify Guest Form opened
-    expect(find.text('STEP 1 OF 3'), findsOneWidget);
+    expect(find.text('STEP 1 OF 4'), findsOneWidget);
 
     // Verify pre-selected room #01 is LOCKED and displayed in AppBar
     expect(find.text('LOCKED'), findsOneWidget);
@@ -134,13 +189,13 @@ void main() {
     scaffoldMessenger.clearSnackBars();
     await tester.pumpAndSettle();
 
-    // Continue to Step 2 to verify room cannot be changed
+    // Continue to Step 2 (Stay & Room Allocation)
     final continueBtn = find.text('Continue to Step 2');
     await tester.ensureVisible(continueBtn);
     await tester.tap(continueBtn, warnIfMissed: false);
     await tester.pumpAndSettle();
 
-    expect(find.text('Step 2: Room Allocation & Stay Duration'), findsOneWidget);
+    expect(find.textContaining('Room Allocation & Stay Duration'), findsOneWidget);
     expect(find.text('LOCKED'), findsWidgets);
   });
 
@@ -149,12 +204,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const HotelManagementApp());
-    await tester.pumpAndSettle();
-
-    // Open wizard
-    final checkInAction = find.text('4-Step Check-In');
-    await tester.tap(checkInAction);
+    await tester.pumpWidget(createWizardTestApp());
     await tester.pumpAndSettle();
 
     // Verify initial Aadhaar Card hint text
@@ -169,38 +219,40 @@ void main() {
     // Verify inline validation errors appear below fields
     expect(find.text('Guest full name (as per Govt ID) is required'), findsOneWidget);
     expect(find.text('Please enter valid Aadhaar Card document number'), findsOneWidget);
-    expect(find.text('Physical ID inspection confirmation is mandatory'), findsOneWidget);
 
     // Verify no SnackBar error popup was created
     expect(find.byType(SnackBar), findsNothing);
 
-    // Verify tapping on disabled future tab (Stay & Room) stays on Step 1
-    final stayRoomTab = find.text('Stay & Room').first;
-    await tester.ensureVisible(stayRoomTab);
-    await tester.tap(stayRoomTab);
+    // Verify tapping on disabled future tab (Stay) stays on Step 1
+    final stayTab = find.text('Stay').first;
+    await tester.ensureVisible(stayTab);
+    await tester.tap(stayTab);
     await tester.pumpAndSettle();
     expect(find.text('PRIMARY GUEST IDENTITY'), findsOneWidget);
   });
 
-  testWidgets('Attached Guest Identities Flow: Automatic Room Category Guest Identities (Family / Group)', (WidgetTester tester) async {
+  testWidgets('Check-In Wizard 4-Step Flow with Room Details and Optional Second Guest', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const HotelManagementApp());
+    const familyRoom = RoomModel(
+      id: 'room-01',
+      roomNumber: '#01',
+      floor: 'Floor 1',
+      roomType: 'family room',
+      pricePerNight: 5000,
+      status: RoomStatus.available,
+      maxOccupancy: 4,
+      amenities: ['King Bed', 'Balcony View', 'Wi-Fi', 'Smart TV', 'En-suite Bath'],
+    );
+
+    await tester.pumpWidget(createWizardTestApp(preselectedRoom: familyRoom));
     await tester.pumpAndSettle();
 
-    // Open wizard
-    final checkInAction = find.text('4-Step Check-In');
-    await tester.tap(checkInAction);
-    await tester.pumpAndSettle();
-
-    // Verify Primary & Attached Identities rendered automatically for the room category
+    // Verify Step 1 renders Primary Guest Identity and shows 4 steps
+    expect(find.text('STEP 1 OF 4'), findsOneWidget);
     expect(find.text('PRIMARY GUEST IDENTITY'), findsOneWidget);
-    expect(find.text('ATTACHED IDENTITIES'), findsOneWidget);
-    expect(find.text('+ Add Member'), findsOneWidget);
-    expect(find.text('Family Member #1'), findsOneWidget);
-    expect(find.text('Family Member #2'), findsOneWidget);
 
     // Auto-fill demo data
     final quickFillBtn = find.text('Quick Fill');
@@ -213,19 +265,15 @@ void main() {
     scaffoldMessenger.clearSnackBars();
     await tester.pumpAndSettle();
 
-    // Verify attached names are populated
-    expect(find.text('Niraj Vekariya'), findsWidgets);
-    expect(find.text('Pooja Vekariya'), findsOneWidget);
-    expect(find.text('Aarav Vekariya'), findsOneWidget);
-
-    // Continue to Step 2
+    // Continue to Step 2 (Stay & Room Allocation)
     final continueBtn = find.text('Continue to Step 2');
     await tester.ensureVisible(continueBtn);
     await tester.tap(continueBtn, warnIfMissed: false);
     await tester.pumpAndSettle();
 
     // Verify successfully advanced to Step 2
-    expect(find.text('Step 2: Room Allocation & Stay Duration'), findsOneWidget);
+    expect(find.textContaining('Room Allocation & Stay Duration'), findsOneWidget);
+    expect(find.text('LOCKED'), findsWidgets);
   });
 
   testWidgets('Room Inventory & Categories 2026 UI: Real-time health metrics, search filter & unit badges', (WidgetTester tester) async {
@@ -233,7 +281,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const HotelManagementApp());
+    await tester.pumpWidget(const MyOwnPMSApp());
     await tester.pumpAndSettle();
 
     // Tap on Rooms tab in bottom navigation bar
@@ -242,13 +290,8 @@ void main() {
     await tester.tap(roomsTab);
     await tester.pumpAndSettle();
 
-    // Verify Room Inventory & Categories header and Live Metrics card
+    // Verify Room Inventory & Categories header in AppBar
     expect(find.text('Room Inventory & Categories'), findsOneWidget);
-    expect(find.text('LIVE INVENTORY HEALTH'), findsOneWidget);
-    expect(find.text('15 Units Total'), findsOneWidget);
-    expect(find.text('Ready'), findsOneWidget);
-    expect(find.text('Occupied'), findsOneWidget);
-    expect(find.text('Turnaround'), findsOneWidget);
 
     // Verify Search bar is present
     expect(find.byType(TextField), findsOneWidget);
@@ -291,7 +334,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    await tester.pumpWidget(const HotelManagementApp());
+    await tester.pumpWidget(const MyOwnPMSApp());
     await tester.pumpAndSettle();
 
     // Tap In-House in bottom navigation
@@ -343,55 +386,7 @@ void main() {
     expect(find.text('Vikram Mehta'), findsNothing);
   });
 
-  testWidgets('Camera & OCR Document: Open scan modal, check camera options, render document card & remove', (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-
-    await tester.pumpWidget(const HotelManagementApp());
-    await tester.pumpAndSettle();
-
-    // Tap Quick 4-Step Check-In
-    final checkInAction = find.text('4-Step Check-In');
-    await tester.tap(checkInAction);
-    await tester.pumpAndSettle();
-
-    // Tap Scan Original ID Document button
-    final scanBtn = find.text('Scan Original ID Document (OCR Auto-Fill)');
-    await tester.ensureVisible(scanBtn);
-    await tester.tap(scanBtn);
-    await tester.pumpAndSettle();
-
-    // Verify OCR & Camera modal is displayed with Camera, Gallery, and Demo options
-    expect(find.text('Primary Guest OCR Scanner'), findsOneWidget);
-    expect(find.text('Open Camera & Snap Photo'), findsOneWidget);
-    expect(find.text('Gallery'), findsOneWidget);
-    expect(find.text('Demo Fill'), findsOneWidget);
-
-    // Tap Demo Fill
-    final demoFillBtn = find.text('Demo Fill');
-    await tester.tap(demoFillBtn);
-    await tester.pumpAndSettle();
-
-    // Verify modal is dismissed and original document card is rendered
-    expect(find.text('ORIGINAL DOC SCANNED'), findsOneWidget);
-    expect(find.text('Re-scan'), findsOneWidget);
-    expect(find.text('मेरा आधार, मेरी पहचान'), findsOneWidget);
-
-    // Verify default placeholder button was removed
-    expect(find.text('Scan Original ID Document (OCR Auto-Fill)'), findsNothing);
-
-    // Tap delete button to remove scanned document
-    final deleteIcon = find.byIcon(Icons.delete_outline_rounded);
-    await tester.tap(deleteIcon);
-    await tester.pumpAndSettle();
-
-    // Verify document card is removed and default scan button is restored
-    expect(find.text('ORIGINAL DOC SCANNED'), findsNothing);
-    expect(find.text('Scan Original ID Document (OCR Auto-Fill)'), findsOneWidget);
-  });
-
-  testWidgets('Front & Back Side ID Storage: Toggle tabs, preview both sides, and verify UIDAI back details', (WidgetTester tester) async {
+  testWidgets('Add ID Proof: Single Add ID Proof button rendered cleanly without separate front/back slots', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 1920);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(() {
@@ -399,43 +394,126 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
-    await tester.pumpWidget(const HotelManagementApp());
+    await tester.pumpWidget(createWizardTestApp());
     await tester.pumpAndSettle();
 
-    // Tap Quick 4-Step Check-In
-    final checkInAction = find.text('4-Step Check-In');
-    await tester.tap(checkInAction);
+    // Verify single Add ID Proof button is present and Front/Back separate slots are removed
+    expect(find.text('Add ID Proof'), findsOneWidget);
+    expect(find.byIcon(Icons.add_photo_alternate_rounded), findsWidgets);
+    expect(find.text('Front ID'), findsNothing);
+    expect(find.text('Back ID'), findsNothing);
+  });
+
+  testWidgets('ID Proofs Attached Preview: Preloaded ID photos display preview with Remove', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1920);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final formDataWithPhotos = CheckInFormData(
+      idFrontPhotoUrl: 'scanned_aadhaar.png',
+      idBackPhotoUrl: 'scanned_aadhaar_back.png',
+      guestFullName: 'Niraj Vekariya',
+    );
+
+    await tester.pumpWidget(createWizardTestApp(initialFormData: formDataWithPhotos));
     await tester.pumpAndSettle();
 
-    // Tap Scan button
-    final scanBtn = find.text('Scan Original ID Document (OCR Auto-Fill)');
-    await tester.ensureVisible(scanBtn);
-    await tester.tap(scanBtn);
+    // Verify ID proofs attached section is shown with preview cards and remove options
+    expect(find.text('ID Proofs Attached (2)'), findsOneWidget);
+    expect(find.text('Verified ✓'), findsOneWidget);
+    expect(find.byIcon(Icons.close_rounded), findsNWidgets(2));
+
+    // Tap remove on first ID
+    final removeBtns = find.byIcon(Icons.close_rounded);
+    await tester.tap(removeBtns.first);
     await tester.pumpAndSettle();
 
-    // Verify Front & Back side tabs in scanner modal
-    expect(find.text('Front Side'), findsWidgets);
-    expect(find.text('Back Side'), findsWidgets);
+    // Verify first photo removed, count updated to 1
+    expect(find.text('ID Proofs Attached (1)'), findsOneWidget);
+  });
 
-    // Tap Demo Fill
-    final demoFillBtn = find.text('Demo Fill');
-    await tester.tap(demoFillBtn);
+  testWidgets('Digital Signature Pad: Drawing, Auto-Sign, and Clear actions in Step 1 Guest Identity', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1200, 1920);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(createWizardTestApp(
+      initialFormData: CheckInFormData(
+        roomType: 'standard room',
+        numberOfGuests: 1,
+        partyType: 'Solo Guest',
+      ),
+    ));
     await tester.pumpAndSettle();
 
-    // Default active side is Front Side
-    expect(find.text('FRONT SIDE'), findsOneWidget);
-    expect(find.text('Front Side ✓'), findsOneWidget);
-    expect(find.text('Back Side ✓'), findsOneWidget);
-
-    // Tap Back Side tab
-    final backTab = find.text('Back Side ✓');
-    await tester.tap(backTab);
+    // Verify Signature Pad is rendered in Step 1
+    final sigPadTitle = find.text('Main Guest Signature');
+    expect(sigPadTitle, findsOneWidget);
+    await tester.ensureVisible(sigPadTitle);
     await tester.pumpAndSettle();
 
-    // Verify Back Side document card is rendered with address, UIDAI, and QR details
-    expect(find.text('BACK SIDE'), findsNWidgets(2));
-    expect(find.text('भारतीय विशिष्ट पहचान प्राधिकरण'), findsOneWidget);
-    expect(find.text('SECURE'), findsOneWidget);
+    expect(find.text('Required'), findsOneWidget);
+    expect(find.text('Touch & drag finger here to sign'), findsOneWidget);
+
+    // Draw signature directly on canvas via touch drag
+    await tester.drag(find.text('Touch & drag finger here to sign'), const Offset(60, 20), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    // Status updates to Signed
+    expect(find.text('Signed'), findsOneWidget);
+    expect(find.text('Signature captured!'), findsOneWidget);
+
+    // Switch to Phone QR tab
+    final phoneQrTab = find.text('Phone QR');
+    expect(phoneQrTab, findsOneWidget);
+    await tester.tap(phoneQrTab);
+    await tester.pumpAndSettle();
+
+    // Verify received mobile signature UI
+    expect(find.text('Signature Received from Mobile!'), findsOneWidget);
+    expect(find.text('Signature successfully received from mobile device.'), findsOneWidget);
+
+    // Tap Clear
+    final clearBtn = find.byKey(const ValueKey('signature_clear_btn'));
+    expect(clearBtn, findsOneWidget);
+    await tester.tap(clearBtn);
+    await tester.pumpAndSettle();
+
+    // Status reverts to Required
+    expect(find.text('Required'), findsOneWidget);
+    expect(find.text('Scan with Smartphone to Sign Remotely'), findsOneWidget);
+
+    // Switch to Type Name tab on mobile width without overflow
+    final typeNameTab = find.text('Type Name');
+    expect(typeNameTab, findsOneWidget);
+    await tester.tap(typeNameTab);
+    await tester.pumpAndSettle();
+
+    // Verify Type Name elements
+    expect(find.text('Guest Full Name:'), findsOneWidget);
+    expect(find.text('Font Style:'), findsOneWidget);
+    expect(find.text('Cursive'), findsOneWidget);
+    expect(find.text('Calligraphy'), findsOneWidget);
+    expect(find.text('Casual'), findsOneWidget);
+
+    // Select Calligraphy style
+    await tester.tap(find.text('Calligraphy'));
+    await tester.pumpAndSettle();
+
+    // Tap Apply This Signature
+    final applyBtn = find.text('Apply This Signature');
+    expect(applyBtn, findsOneWidget);
+    await tester.tap(applyBtn);
+    await tester.pumpAndSettle();
+
+    // Signature status is Signed
+    expect(find.text('Signed'), findsOneWidget);
   });
 }
 

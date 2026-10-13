@@ -14,6 +14,75 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     on<FilterRoomsEvent>(_onFilterRooms);
     on<ChangeRoomStatusDashboardEvent>(_onChangeRoomStatus);
     on<CheckoutGuestEvent>(_onCheckoutGuest);
+    on<ExtendFolioStayEvent>(_onExtendFolioStay);
+    on<AddFolioPaymentEvent>(_onAddFolioPayment);
+    on<AddFolioChargeEvent>(_onAddFolioCharge);
+    on<UpdateFolioKeycardEvent>(_onUpdateFolioKeycard);
+    on<LoadBookingsEvent>(_onLoadBookings);
+  }
+
+  Future<void> _onLoadBookings(
+    LoadBookingsEvent event,
+    Emitter<DashboardState> emit,
+  ) async {
+    if (event.showLoading && state.folios.isEmpty) {
+      emit(state.copyWith(status: DashboardStatus.loading));
+    }
+    try {
+      final folios = await repository.fetchBookings(
+        status: event.status,
+        search: event.search,
+        page: event.page,
+        limit: event.limit,
+      );
+      if (folios.isNotEmpty || state.folios.isEmpty) {
+        emit(state.copyWith(
+          status: DashboardStatus.loaded,
+          folios: folios,
+        ));
+      } else {
+        emit(state.copyWith(status: DashboardStatus.loaded));
+      }
+    } catch (_) {
+      emit(state.copyWith(status: DashboardStatus.loaded));
+    }
+  }
+
+
+  Future<void> _onExtendFolioStay(
+    ExtendFolioStayEvent event,
+    Emitter<DashboardState> emit,
+  ) async {
+    await repository.extendFolioStay(event.folioId, event.newCheckoutDate);
+    add(RefreshDashboardDataEvent());
+  }
+
+  Future<void> _onAddFolioPayment(
+    AddFolioPaymentEvent event,
+    Emitter<DashboardState> emit,
+  ) async {
+    await repository.addFolioPayment(event.folioId, event.payment);
+    add(RefreshDashboardDataEvent());
+  }
+
+  Future<void> _onAddFolioCharge(
+    AddFolioChargeEvent event,
+    Emitter<DashboardState> emit,
+  ) async {
+    await repository.addFolioCharge(event.folioId, event.charge);
+    add(RefreshDashboardDataEvent());
+  }
+
+  Future<void> _onUpdateFolioKeycard(
+    UpdateFolioKeycardEvent event,
+    Emitter<DashboardState> emit,
+  ) async {
+    await repository.updateFolioKeycard(
+      event.folioId,
+      event.keycardStatus,
+      event.keycardNumber,
+    );
+    add(RefreshDashboardDataEvent());
   }
 
   Future<void> _onLoadDashboardData(
@@ -23,6 +92,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     emit(state.copyWith(status: DashboardStatus.loading));
     try {
       final rooms = await repository.getRooms();
+      final roomTypes = await repository.getRoomTypes();
       final folios = await repository.getFolios();
       final stats = await repository.getStats();
 
@@ -32,6 +102,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         status: DashboardStatus.loaded,
         allRooms: rooms,
         filteredRooms: filtered,
+        roomTypes: roomTypes,
         folios: folios,
         stats: stats,
       ));
@@ -49,6 +120,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   ) async {
     try {
       final rooms = await repository.getRooms();
+      final roomTypes = await repository.getRoomTypes();
       final folios = await repository.getFolios();
       final stats = await repository.getStats();
 
@@ -58,6 +130,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         status: DashboardStatus.loaded,
         allRooms: rooms,
         filteredRooms: filtered,
+        roomTypes: roomTypes,
         folios: folios,
         stats: stats,
       ));
@@ -94,7 +167,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     CheckoutGuestEvent event,
     Emitter<DashboardState> emit,
   ) async {
-    await repository.checkoutFolio(event.folioId);
+    await repository.checkoutFolio(event.folioId, customPayload: event.customPayload);
     add(RefreshDashboardDataEvent());
   }
 

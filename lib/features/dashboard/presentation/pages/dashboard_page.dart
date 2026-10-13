@@ -20,6 +20,7 @@ import '../widgets/recent_folios_table.dart';
 import '../widgets/room_matrix_section.dart';
 import '../widgets/sidebar_navigation.dart';
 import '../widgets/top_app_bar.dart';
+import '../widgets/dashboard_shimmer_loader.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -243,11 +244,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     // Main View Body
                     Expanded(
                       child: state.status == DashboardStatus.loading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                color: AppColors.primary,
-                              ),
-                            )
+                          ? const DashboardShimmerLoader()
                           : _buildBody(context, state),
                     ),
                   ],

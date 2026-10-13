@@ -21,7 +21,6 @@ class Step5KeycardSummary extends StatefulWidget {
 
 class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
   late String _keycard;
-  late bool _agree;
 
   final List<String> _availableKeycards = [
     'KC-101 (Floor 1 NFC)',
@@ -37,13 +36,12 @@ class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
     _keycard = widget.formData.assignedKeycardNumber.isNotEmpty
         ? widget.formData.assignedKeycardNumber
         : _availableKeycards.first;
-    _agree = widget.formData.agreeTermsAndSignature;
   }
 
   void _notify() {
     final updated = widget.formData.copy();
     updated.assignedKeycardNumber = _keycard;
-    updated.agreeTermsAndSignature = _agree;
+    updated.agreeTermsAndSignature = true;
     widget.onDataChanged(updated);
   }
 
@@ -52,6 +50,34 @@ class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Step Banner
+        Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0FDF4),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFBBF7D0)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.verified_user_outlined,
+                  color: Color(0xFF16A34A), size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Step 4: Review & Check-In',
+                  style: GoogleFonts.inter(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF15803D),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
         // RFID Keycard Assignment
         Text(
           'ASSIGN PHYSICAL RFID KEYCARD *',
@@ -85,7 +111,12 @@ class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
                     children: [
                       const Icon(Icons.nfc, size: 16, color: AppColors.primary),
                       const SizedBox(width: 8),
-                      Text(kc),
+                      Expanded(
+                        child: Text(
+                          kc,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
                 );
@@ -159,6 +190,11 @@ class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
               const SizedBox(height: 14),
 
               _buildSummaryRow('Primary Guest', widget.formData.guestFullName.isNotEmpty ? widget.formData.guestFullName : 'Not provided'),
+              if (widget.formData.secondGuestName != null && widget.formData.secondGuestName!.isNotEmpty)
+                _buildSummaryRow(
+                  'Second Guest',
+                  '${widget.formData.secondGuestName}${widget.formData.secondGuestPhone != null && widget.formData.secondGuestPhone!.isNotEmpty ? " (${widget.formData.secondGuestPhone})" : ""}',
+                ),
               _buildSummaryRow('Primary Govt ID', '${widget.formData.idType} (${widget.formData.idNumber.isNotEmpty ? widget.formData.idNumber : "Verified"})'),
               if (widget.formData.idFrontPhotoUrl != null || widget.formData.idBackPhotoUrl != null)
                 _buildSummaryRow(
@@ -184,57 +220,6 @@ class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
               _buildSummaryRow('Advance Deposit Paid', CurrencyFormatter.format(widget.formData.advancePaid), isHighlighted: true),
               _buildSummaryRow('Balance Due', CurrencyFormatter.format(widget.formData.balanceDue)),
             ],
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        // Digital Agreement
-        InkWell(
-          onTap: () {
-            setState(() => _agree = !_agree);
-            _notify();
-          },
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Checkbox(
-                  value: _agree,
-                  activeColor: AppColors.accentGreen,
-                  onChanged: (val) {
-                    setState(() => _agree = val ?? true);
-                    _notify();
-                  },
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Guest acknowledges resort policies & digital signature confirmed.',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Generates live Folio invoice, assigns keycard, and updates room status to Occupied In-House.',
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ],

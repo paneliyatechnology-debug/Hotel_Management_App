@@ -8,8 +8,8 @@ import 'check_in_state.dart';
 class CheckInBloc extends Bloc<CheckInEvent, CheckInState> {
   final IDashboardRepository repository;
 
-  CheckInBloc({required this.repository})
-      : super(CheckInState(formData: CheckInFormData())) {
+  CheckInBloc({required this.repository, CheckInFormData? initialFormData})
+      : super(CheckInState(formData: initialFormData ?? CheckInFormData())) {
     on<InitCheckInWizardEvent>(_onInit);
     on<NextStepEvent>(_onNextStep);
     on<PreviousStepEvent>(_onPreviousStep);
@@ -56,6 +56,39 @@ class CheckInBloc extends Bloc<CheckInEvent, CheckInState> {
       );
     }
 
+    if (initData.roomType.toLowerCase().contains('family')) {
+      initData.accompanyingGuests = [
+        AccompanyingGuest(
+          name: '',
+          relationship: 'Spouse',
+          idType: 'Aadhaar Card',
+          idNumber: '',
+          isIdVerified: false,
+        ),
+        AccompanyingGuest(
+          name: '',
+          relationship: 'Child',
+          idType: 'Aadhaar Card',
+          idNumber: '',
+          isIdVerified: false,
+        ),
+      ];
+      initData.partyType = 'Family / Group';
+      initData.numberOfGuests = 3;
+    } else if (initData.roomType.toLowerCase().contains('couple')) {
+      initData.accompanyingGuests = [
+        AccompanyingGuest(
+          name: '',
+          relationship: 'Spouse',
+          idType: 'Aadhaar Card',
+          idNumber: '',
+          isIdVerified: false,
+        ),
+      ];
+      initData.partyType = 'Couple (2 Guests)';
+      initData.numberOfGuests = 2;
+    }
+
     emit(state.copyWith(
       currentStep: 0,
       formData: initData,
@@ -69,7 +102,7 @@ class CheckInBloc extends Bloc<CheckInEvent, CheckInState> {
     NextStepEvent event,
     Emitter<CheckInState> emit,
   ) {
-    if (state.currentStep < 2) {
+    if (state.currentStep < 3) {
       emit(state.copyWith(
         currentStep: state.currentStep + 1,
         showValidationErrors: false,
@@ -93,7 +126,7 @@ class CheckInBloc extends Bloc<CheckInEvent, CheckInState> {
     GoToStepEvent event,
     Emitter<CheckInState> emit,
   ) {
-    if (event.step >= 0 && event.step <= 2) {
+    if (event.step >= 0 && event.step <= 3) {
       emit(state.copyWith(
         currentStep: event.step,
         showValidationErrors: false,

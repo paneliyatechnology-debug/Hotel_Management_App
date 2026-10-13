@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 class AccompanyingGuest {
   String id;
   String name;
@@ -10,6 +12,8 @@ class AccompanyingGuest {
   String? get idFrontPhotoUrl => idPhotoUrl;
   set idFrontPhotoUrl(String? val) => idPhotoUrl = val;
   String? idBackPhotoUrl;
+  List<Offset?> signaturePoints;
+  bool isSignatureCaptured;
 
   AccompanyingGuest({
     String? id,
@@ -21,7 +25,10 @@ class AccompanyingGuest {
     this.isIdVerified = false,
     this.idPhotoUrl,
     this.idBackPhotoUrl,
-  }) : id = id ?? DateTime.now().microsecondsSinceEpoch.toString();
+    List<Offset?>? signaturePoints,
+    this.isSignatureCaptured = false,
+  })  : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+        signaturePoints = signaturePoints ?? [];
 
   AccompanyingGuest copy() {
     return AccompanyingGuest(
@@ -34,6 +41,8 @@ class AccompanyingGuest {
       isIdVerified: isIdVerified,
       idPhotoUrl: idPhotoUrl,
       idBackPhotoUrl: idBackPhotoUrl,
+      signaturePoints: List.from(signaturePoints),
+      isSignatureCaptured: isSignatureCaptured,
     );
   }
 }
@@ -47,7 +56,12 @@ class CheckInFormData {
   String nationality;
   String? idFrontPhotoUrl;
   String? idBackPhotoUrl;
+  List<String> idPhotos;
   bool isIdVerified;
+
+  // Optional Second Guest Details (Step 1)
+  String? secondGuestName;
+  String? secondGuestPhone;
 
   // Attached / Accompanying Guests (Couple / Family)
   List<AccompanyingGuest> accompanyingGuests;
@@ -83,6 +97,13 @@ class CheckInFormData {
   // Step 5: Keycard & Allocation
   String assignedKeycardNumber;
   bool agreeTermsAndSignature;
+  List<Offset?> signaturePoints;
+  bool isSignatureCaptured;
+
+  // Backend Integration Identifiers
+  String? guestId;
+  String? bookingNumber;
+  String? receiptNumber;
 
   CheckInFormData({
     this.partyType = 'Solo Guest',
@@ -92,7 +113,10 @@ class CheckInFormData {
     this.nationality = 'Indian',
     this.idFrontPhotoUrl,
     this.idBackPhotoUrl,
+    List<String>? idPhotos,
     this.isIdVerified = false,
+    this.secondGuestName,
+    this.secondGuestPhone,
     List<AccompanyingGuest>? accompanyingGuests,
     this.selectedRoomId = '',
     this.selectedRoomNumber = '',
@@ -118,7 +142,17 @@ class CheckInFormData {
     this.transactionRef = '',
     this.assignedKeycardNumber = 'KC-101',
     this.agreeTermsAndSignature = true,
-  })  : accompanyingGuests = accompanyingGuests ?? [],
+    List<Offset?>? signaturePoints,
+    this.isSignatureCaptured = false,
+    this.guestId,
+    this.bookingNumber,
+    this.receiptNumber,
+  })  : idPhotos = idPhotos ?? [
+          if (idFrontPhotoUrl != null && idFrontPhotoUrl.isNotEmpty) idFrontPhotoUrl,
+          if (idBackPhotoUrl != null && idBackPhotoUrl.isNotEmpty) idBackPhotoUrl,
+        ],
+        accompanyingGuests = accompanyingGuests ?? [],
+        signaturePoints = signaturePoints ?? [],
         selectedFloor = selectedFloor ?? 'Floor 1',
         checkInDate = checkInDate ?? DateTime.now(),
         checkOutDate = checkOutDate ?? DateTime.now().add(const Duration(days: 1));
@@ -142,7 +176,10 @@ class CheckInFormData {
       nationality: nationality,
       idFrontPhotoUrl: idFrontPhotoUrl,
       idBackPhotoUrl: idBackPhotoUrl,
+      idPhotos: List<String>.from(idPhotos),
       isIdVerified: isIdVerified,
+      secondGuestName: secondGuestName,
+      secondGuestPhone: secondGuestPhone,
       accompanyingGuests: accompanyingGuests.map((g) => g.copy()).toList(),
       selectedRoomId: selectedRoomId,
       selectedRoomNumber: selectedRoomNumber,
@@ -168,6 +205,11 @@ class CheckInFormData {
       transactionRef: transactionRef,
       assignedKeycardNumber: assignedKeycardNumber,
       agreeTermsAndSignature: agreeTermsAndSignature,
+      signaturePoints: List<Offset?>.from(signaturePoints),
+      isSignatureCaptured: isSignatureCaptured,
+      guestId: guestId,
+      bookingNumber: bookingNumber,
+      receiptNumber: receiptNumber,
     );
   }
 }

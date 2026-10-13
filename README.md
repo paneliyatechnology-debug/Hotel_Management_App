@@ -1,6 +1,6 @@
-# hotel_management_system
+# MyOwnPMS System
 
-A new Flutter project.
+A Next-Gen Cloud Hotel Property Management System (PMS) Flutter application.
 
 ## Getting Started
 

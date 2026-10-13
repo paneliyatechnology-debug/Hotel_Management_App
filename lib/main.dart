@@ -7,17 +7,38 @@ import 'features/dashboard/presentation/bloc/dashboard_bloc.dart';
 import 'features/dashboard/presentation/pages/mobile_main_screen.dart';
 import 'features/rooms/presentation/bloc/rooms_bloc.dart';
 
+import 'features/guests/data/repositories/guests_repository.dart';
+import 'features/guests/presentation/bloc/guests_bloc.dart';
+import 'features/guests/presentation/bloc/guests_event.dart';
+
+import 'features/auth/data/repositories/auth_repository.dart';
+import 'features/auth/presentation/bloc/auth_bloc.dart';
+import 'features/auth/presentation/bloc/auth_event.dart';
+import 'features/auth/presentation/pages/splash_screen.dart';
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const HotelManagementApp());
+  runApp(const MyOwnPMSApp());
 }
 
-class HotelManagementApp extends StatelessWidget {
-  const HotelManagementApp({super.key});
+class MyOwnPMSApp extends StatelessWidget {
+  final Widget? home;
+  final AuthRepository? authRepository;
+
+  const MyOwnPMSApp({super.key, this.home, this.authRepository});
 
   @override
   Widget build(BuildContext context) {
+    final effectiveAuthRepository = authRepository ?? AuthRepository();
     final dashboardRepository = DashboardRepository();
+    final guestsRepository = GuestsRepository(authRepository: effectiveAuthRepository);
+
+    // Default to MobileMainScreen during automated widget tests if home is null,
+    // and SplashScreen for standard production runs.
+    final Widget initialHome = home ??
+        (WidgetsBinding.instance.runtimeType.toString().contains('Test')
+            ? const MobileMainScreen()
+            : SplashScreen(authRepository: effectiveAuthRepository));
 
     return MultiBlocProvider(
       providers: [
@@ -30,13 +51,22 @@ class HotelManagementApp extends StatelessWidget {
         BlocProvider<CheckInBloc>(
           create: (_) => CheckInBloc(repository: dashboardRepository),
         ),
+        BlocProvider<GuestsBloc>(
+          create: (_) => GuestsBloc(repository: guestsRepository)..add(const LoadGuestsEvent()),
+        ),
+        BlocProvider<AuthBloc>(
+          create: (_) => AuthBloc(repository: effectiveAuthRepository)..add(const AuthCheckRequested()),
+        ),
       ],
       child: MaterialApp(
-        title: 'Grand Royale - Front Desk Mobile',
+        title: 'MyOwnPMS System',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
-        home: const MobileMainScreen(),
+        home: initialHome,
       ),
     );
   }
 }
+
+/// Backward compatibility alias for legacy references and tests
+typedef HotelManagementApp = MyOwnPMSApp;

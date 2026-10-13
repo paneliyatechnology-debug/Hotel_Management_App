@@ -5,13 +5,11 @@ import '../constants/app_colors.dart';
 class ModernBottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
-  final VoidCallback onQuickCheckIn;
 
   const ModernBottomNavBar({
     super.key,
     required this.currentIndex,
     required this.onTap,
-    required this.onQuickCheckIn,
   });
 
   @override
@@ -50,35 +48,6 @@ class ModernBottomNavBar extends StatelessWidget {
                   label: 'Rooms',
                 ),
               ),
-              // Center Express Check-In Action FAB
-              GestureDetector(
-                onTap: onQuickCheckIn,
-                child: Container(
-                  width: 46,
-                  height: 46,
-                  margin: const EdgeInsets.symmetric(horizontal: 4),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [AppColors.primaryLight, AppColors.primary],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.35),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.add_rounded,
-                    color: Colors.white,
-                    size: 26,
-                  ),
-                ),
-              ),
               Expanded(
                 child: _buildNavItem(
                   index: 2,
@@ -90,6 +59,14 @@ class ModernBottomNavBar extends StatelessWidget {
               Expanded(
                 child: _buildNavItem(
                   index: 3,
+                  icon: Icons.badge_rounded,
+                  outlinedIcon: Icons.badge_outlined,
+                  label: 'Guests',
+                ),
+              ),
+              Expanded(
+                child: _buildNavItem(
+                  index: 4,
                   icon: Icons.apps_rounded,
                   outlinedIcon: Icons.apps_outlined,
                   label: 'More',

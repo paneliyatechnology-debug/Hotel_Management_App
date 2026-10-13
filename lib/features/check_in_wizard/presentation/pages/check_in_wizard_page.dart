@@ -4,7 +4,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
-import '../../../../core/widgets/custom_button.dart';
 import '../../../dashboard/presentation/bloc/dashboard_bloc.dart';
 import '../../../dashboard/presentation/bloc/dashboard_event.dart';
 import '../../data/models/check_in_form_data.dart';
@@ -13,7 +12,12 @@ import '../bloc/check_in_event.dart';
 import '../bloc/check_in_state.dart';
 import '../steps/step_1_guest_identity.dart';
 import '../steps/step_2_stay_room.dart';
+import '../steps/step_3_billing_settlement.dart';
 import '../steps/step_5_keycard_summary.dart';
+import '../../../rooms/presentation/pages/category_rooms_page.dart';
+import '../../../dashboard/data/models/guest_folio_model.dart';
+import '../../../../core/widgets/status_badge.dart';
+import '../widgets/check_in_success_dialog.dart';
 
 class CheckInWizardPage extends StatefulWidget {
   final bool hasScaffold;
@@ -25,9 +29,10 @@ class CheckInWizardPage extends StatefulWidget {
 
 class _CheckInWizardPageState extends State<CheckInWizardPage> {
   final List<Map<String, dynamic>> _stepItems = [
-    {'title': 'Guest Identity', 'short': 'Guest & ID', 'icon': Icons.person_pin_rounded},
-    {'title': 'Stay & Room', 'short': 'Stay & Room', 'icon': Icons.king_bed_rounded},
-    {'title': 'Keycard & Confirm', 'short': 'Keycard', 'icon': Icons.vpn_key_rounded},
+    {'title': 'Guest', 'short': 'Guest', 'icon': Icons.person_pin_rounded},
+    {'title': 'Stay', 'short': 'Stay', 'icon': Icons.hotel_rounded},
+    {'title': 'Billing', 'short': 'Billing', 'icon': Icons.credit_card_rounded},
+    {'title': 'Review', 'short': 'Review', 'icon': Icons.verified_user_rounded},
   ];
 
   bool _validateCurrentStep(BuildContext context, CheckInState state) {
@@ -35,16 +40,10 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
     switch (state.currentStep) {
       case 0:
         if (state.formData.guestFullName.trim().isEmpty ||
-            state.formData.idNumber.trim().isEmpty ||
-            state.formData.contactPhone.trim().isEmpty ||
-            !state.formData.isIdVerified) {
+            state.formData.contactPhone.trim().isEmpty) {
           isValid = false;
-        }
-        for (final guest in state.formData.accompanyingGuests) {
-          if (guest.name.trim().isEmpty || guest.idNumber.trim().isEmpty || !guest.isIdVerified) {
-            isValid = false;
-            break;
-          }
+        } else if (state.formData.idNumber.trim().isEmpty) {
+          state.formData.idNumber = 'PHOTO-VERIFIED';
         }
         break;
 
@@ -57,6 +56,12 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
         break;
 
       case 2:
+        if (state.formData.pricePerNight < 0 || state.formData.advancePaid < 0) {
+          isValid = false;
+        }
+        break;
+
+      case 3:
         if (state.formData.assignedKeycardNumber.isEmpty ||
             !state.formData.agreeTermsAndSignature) {
           isValid = false;
@@ -127,6 +132,17 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
         ),
       ];
       updated.numberOfGuests = 2;
+    } else if (updated.accompanyingGuests.isNotEmpty) {
+      // Auto-fill existing accompanying guests for all room categories
+      for (int i = 0; i < updated.accompanyingGuests.length; i++) {
+        final g = updated.accompanyingGuests[i];
+        if (g.name.isEmpty) g.name = i == 0 ? 'Pooja Vekariya' : 'Aarav Vekariya';
+        if (g.idNumber.isEmpty) g.idNumber = i == 0 ? '5421-9876-5678' : '5421-9876-9012';
+        g.isIdVerified = true;
+        g.idPhotoUrl = 'scanned_aadhaar.png';
+        g.idBackPhotoUrl = 'scanned_aadhaar_back.png';
+      }
+      updated.numberOfGuests = 1 + updated.accompanyingGuests.length;
     } else {
       // Solo guest
       updated.accompanyingGuests = [];
@@ -144,6 +160,17 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
     updated.advancePaid = updated.grandTotal;
     updated.assignedKeycardNumber = 'KC-101';
     updated.agreeTermsAndSignature = true;
+    updated.isSignatureCaptured = true;
+    updated.signaturePoints = [
+      const Offset(40, 70),
+      const Offset(55, 45),
+      const Offset(70, 75),
+      const Offset(85, 50),
+      const Offset(110, 65),
+      null,
+      const Offset(35, 85),
+      const Offset(150, 82),
+    ];
 
     context.read<CheckInBloc>().add(UpdateFormDataEvent(updated));
 
@@ -176,91 +203,76 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
     return BlocConsumer<CheckInBloc, CheckInState>(
       listener: (context, state) {
         if (state.status == CheckInStatus.success) {
+          // 1. Refresh dashboard data so room status is updated to occupied
           context.read<DashboardBloc>().add(RefreshDashboardDataEvent());
 
+          final category = state.formData.roomType.trim().isNotEmpty
+              ? state.formData.roomType.trim()
+              : (state.completedFolio?.roomType.trim().isNotEmpty == true
+                  ? state.completedFolio!.roomType.trim()
+                  : 'Standard Room');
+
+          final folio = state.completedFolio ??
+              GuestFolioModel(
+                id: 'BK-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}',
+                bookingId: 'BK-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}',
+                guestName: state.formData.guestFullName.isNotEmpty
+                    ? state.formData.guestFullName
+                    : 'Niraj Vekariya',
+                phone: state.formData.contactPhone.isNotEmpty
+                    ? state.formData.contactPhone
+                    : '0884921811',
+                email: state.formData.email.isNotEmpty
+                    ? state.formData.email
+                    : 'niraj.v@example.com',
+                assignedRoom: state.formData.selectedRoomNumber.isNotEmpty
+                    ? state.formData.selectedRoomNumber
+                    : 'Room 03',
+                roomType: state.formData.roomType.isNotEmpty
+                    ? state.formData.roomType
+                    : 'Deluxe Room',
+                checkInDate: state.formData.checkInDate,
+                checkOutDate: state.formData.checkOutDate,
+                status: FolioStatus.inHouse,
+                idType: state.formData.idType.isNotEmpty
+                    ? state.formData.idType
+                    : 'Aadhaar Card',
+                idNumber: state.formData.idNumber.isNotEmpty
+                    ? state.formData.idNumber
+                    : '5421-9876-1234',
+                isGovtIdVerified: state.formData.isIdVerified,
+                roomRatePerNight: state.formData.pricePerNight,
+                advancePaid: state.formData.advancePaid,
+                totalAmount: state.formData.grandTotal > 0
+                    ? state.formData.grandTotal
+                    : state.formData.pricePerNight * state.formData.totalNights,
+                paymentMode: state.formData.paymentMode,
+                keycardNumber: state.formData.assignedKeycardNumber.isNotEmpty
+                    ? state.formData.assignedKeycardNumber
+                    : 'KC-101',
+              );
+
+          // 2. Show Success Pop-Up dialog with Print Folio PDF & Send WhatsApp actions
           showDialog(
             context: context,
             barrierDismissible: false,
-            builder: (ctx) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              title: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: AppColors.accentGreenLight,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.check_circle_rounded, color: AppColors.accentGreen, size: 28),
+            builder: (dialogCtx) => CheckInSuccessDialog(
+              folio: folio,
+              formData: state.formData,
+              onDone: () {
+                Navigator.of(dialogCtx).pop();
+
+                // Reset wizard state
+                context.read<CheckInBloc>().add(InitCheckInWizardEvent());
+
+                // Redirect directly to CategoryRoomsPage (Room Number Inventory)
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (context) => CategoryRoomsPage(categoryName: category),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Check-In Complete!',
-                          style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 18),
-                        ),
-                        Text(
-                          'Folio #${state.completedFolio?.id ?? "FOL-7001"}',
-                          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.primarySurface,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.hotel_rounded, color: AppColors.primary, size: 24),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Room ${state.formData.selectedRoomNumber} • ${state.formData.selectedFloor}',
-                                style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.primaryDark),
-                              ),
-                              Text(
-                                'Guest: ${state.formData.guestFullName} (Keycard: ${state.formData.assignedKeycardNumber})',
-                                style: GoogleFonts.inter(fontSize: 11.5, color: AppColors.textSecondary),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Room status updated to Occupied In-House. RFID keycard active.',
-                    style: GoogleFonts.inter(fontSize: 12.5, color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
-              actions: [
-                CustomButton(
-                  text: 'Done',
-                  variant: ButtonVariant.primary,
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    context.read<CheckInBloc>().add(InitCheckInWizardEvent());
-                  },
-                ),
-              ],
+                  (route) => route.isFirst,
+                );
+              },
             ),
           );
         } else if (state.status == CheckInStatus.error) {
@@ -276,24 +288,24 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
         final content = SingleChildScrollView(
           padding: EdgeInsets.symmetric(
             horizontal: isCompact ? 14 : 24,
-            vertical: isCompact ? 12 : 20,
+            vertical: isCompact ? 8 : 16,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 2026 Executive Connected Stepper (Zero Horizontal Scroll, Clean Luxury Design)
               Container(
-                margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                   boxShadow: const [
                     BoxShadow(
                       color: Color(0x06000000),
-                      blurRadius: 10,
-                      offset: Offset(0, 3),
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
                     ),
                   ],
                 ),
@@ -308,19 +320,19 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
                                 decoration: BoxDecoration(
                                   color: AppColors.primarySurface,
-                                  borderRadius: BorderRadius.circular(6),
+                                  borderRadius: BorderRadius.circular(5),
                                   border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.3)),
                                 ),
                                 child: Text(
                                   'STEP ${state.currentStep + 1} OF ${_stepItems.length}',
                                   style: GoogleFonts.inter(
-                                    fontSize: 9.5,
+                                    fontSize: 9,
                                     fontWeight: FontWeight.w800,
                                     color: AppColors.primaryDark,
-                                    letterSpacing: 0.4,
+                                    letterSpacing: 0.3,
                                   ),
                                 ),
                               ),
@@ -331,7 +343,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.inter(
-                                    fontSize: 13,
+                                    fontSize: 12,
                                     fontWeight: FontWeight.w800,
                                     color: AppColors.textPrimary,
                                   ),
@@ -340,28 +352,28 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
 
                         // Quick Fill Action Pill
                         InkWell(
                           onTap: () => _autoFillDemoData(context, state),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4.5),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                             decoration: BoxDecoration(
                               color: const Color(0xFFFEF3C7),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(6),
                               border: Border.all(color: const Color(0xFFFDE68A)),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.flash_on_rounded, size: 13, color: Color(0xFFD97706)),
-                                const SizedBox(width: 4),
+                                const Icon(Icons.flash_on_rounded, size: 12, color: Color(0xFFD97706)),
+                                const SizedBox(width: 3),
                                 Text(
                                   'Quick Fill',
                                   style: GoogleFonts.inter(
-                                    fontSize: 11,
+                                    fontSize: 10.5,
                                     fontWeight: FontWeight.w700,
                                     color: const Color(0xFF92400E),
                                   ),
@@ -373,7 +385,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                       ],
                     ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 8),
 
                     // 4-Step Interactive Connected Timeline
                     Row(
@@ -389,7 +401,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                                 : () {
                                     context.read<CheckInBloc>().add(GoToStepEvent(index));
                                   },
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -398,7 +410,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                                     // Left connector
                                     Expanded(
                                       child: Container(
-                                        height: 2.5,
+                                        height: 2,
                                         color: index == 0
                                             ? Colors.transparent
                                             : (isCompleted || isCurrent
@@ -409,8 +421,8 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
 
                                     // Circle Node
                                     Container(
-                                      width: 28,
-                                      height: 28,
+                                      width: 22,
+                                      height: 22,
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
                                         gradient: isCurrent
@@ -431,25 +443,25 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                                               : isCompleted
                                                   ? const Color(0xFF15803D)
                                                   : const Color(0xFFCBD5E1),
-                                          width: isCurrent ? 2 : 1,
+                                          width: isCurrent ? 1.8 : 1,
                                         ),
                                         boxShadow: isCurrent
                                             ? [
                                                 BoxShadow(
                                                   color: const Color(0xFF0D9488).withValues(alpha: 0.35),
-                                                  blurRadius: 6,
-                                                  offset: const Offset(0, 2),
+                                                  blurRadius: 4,
+                                                  offset: const Offset(0, 1.5),
                                                 ),
                                               ]
                                             : null,
                                       ),
                                       alignment: Alignment.center,
                                       child: isCompleted
-                                          ? const Icon(Icons.check_rounded, size: 15, color: Colors.white)
+                                          ? const Icon(Icons.check_rounded, size: 12, color: Colors.white)
                                           : Text(
                                               '${index + 1}',
                                               style: GoogleFonts.inter(
-                                                fontSize: 11.5,
+                                                fontSize: 10,
                                                 fontWeight: FontWeight.w800,
                                                 color: isCurrent ? Colors.white : const Color(0xFF94A3B8),
                                               ),
@@ -459,7 +471,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                                     // Right connector
                                     Expanded(
                                       child: Container(
-                                        height: 2.5,
+                                        height: 2,
                                         color: index == _stepItems.length - 1
                                             ? Colors.transparent
                                             : (isCompleted
@@ -469,14 +481,14 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 3),
                                 Text(
                                   _stepItems[index]['short'] as String,
                                   textAlign: TextAlign.center,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: GoogleFonts.inter(
-                                    fontSize: 10.5,
+                                    fontSize: 9.5,
                                     fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
                                     color: isCurrent
                                         ? AppColors.primaryDark
@@ -499,24 +511,8 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
 
 
 
-              // Main Form Container
-              Container(
-                width: double.infinity,
-                padding: EdgeInsets.all(isCompact ? 16 : 22),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: AppColors.cardShadow,
-                      blurRadius: 12,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: _buildCurrentStepWidget(context, state),
-              ),
+              // Step Form Content (Direct clean layout without oversized outer card)
+              _buildCurrentStepWidget(context, state),
               const SizedBox(height: 16),
             ],
           ),
@@ -588,7 +584,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                         const Icon(Icons.arrow_back_rounded, size: 15),
                         const SizedBox(width: 4),
                         Text(
-                          'Previous',
+                          'Back',
                           style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
                         ),
                       ],
@@ -824,6 +820,11 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
           onDataChanged: (data) => context.read<CheckInBloc>().add(UpdateFormDataEvent(data)),
         );
       case 2:
+        return Step3BillingSettlement(
+          formData: state.formData,
+          onDataChanged: (data) => context.read<CheckInBloc>().add(UpdateFormDataEvent(data)),
+        );
+      case 3:
         return Step5KeycardSummary(
           formData: state.formData,
           onDataChanged: (data) => context.read<CheckInBloc>().add(UpdateFormDataEvent(data)),

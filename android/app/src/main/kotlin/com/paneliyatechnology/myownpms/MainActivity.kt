@@ -1,4 +1,4 @@
-package com.example.hotel_management_system
+package com.paneliyatechnology.myownpms
 
 import io.flutter.embedding.android.FlutterActivity
 

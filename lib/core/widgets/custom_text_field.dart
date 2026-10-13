@@ -56,6 +56,8 @@ class CustomTextField extends StatelessWidget {
         ] else if (label.isNotEmpty) ...[
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.inter(
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -81,10 +83,11 @@ class CustomTextField extends StatelessWidget {
             fontWeight: FontWeight.w500,
             color: AppColors.textPrimary,
           ),
+          cursorColor: AppColors.primary,
           decoration: InputDecoration(
             hintText: hintText,
             hintStyle: GoogleFonts.inter(
-              fontSize: 13,
+              fontSize: 12.5,
               fontWeight: FontWeight.w400,
               color: const Color(0xFF94A3B8),
             ),
@@ -92,39 +95,49 @@ class CustomTextField extends StatelessWidget {
             helperStyle: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w500,
-              color: const Color(0xFF0D9488),
+              color: AppColors.primary,
             ),
             errorText: errorText,
             errorStyle: GoogleFonts.inter(
-              fontSize: 11.5,
+              fontSize: 11,
               fontWeight: FontWeight.w500,
               color: const Color(0xFFDC2626),
             ),
             prefixIcon: prefixIcon != null
-                ? Icon(prefixIcon, size: 18, color: AppColors.textSecondary)
+                ? Container(
+                    margin: const EdgeInsets.only(left: 8, right: 6, top: 4, bottom: 4),
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Icon(prefixIcon, size: 16, color: const Color(0xFF64748B)),
+                  )
                 : null,
+            prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             suffixIcon: suffixIcon,
             filled: true,
             fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: AppColors.border),
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: AppColors.border),
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
             ),
             errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.2),
+              borderRadius: BorderRadius.circular(10),
+              borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.2),
             ),
             focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
               borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.5),
             ),
           ),
