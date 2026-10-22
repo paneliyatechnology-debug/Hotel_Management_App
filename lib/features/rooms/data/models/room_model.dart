@@ -41,6 +41,7 @@ class RoomModel {
   final List<dynamic> futureBookings;
   final String? requestedCheckInDate;
   final String? requestedCheckOutDate;
+  final String keyCode;
 
   const RoomModel({
     required this.id,
@@ -81,6 +82,7 @@ class RoomModel {
     this.futureBookings = const [],
     this.requestedCheckInDate,
     this.requestedCheckOutDate,
+    this.keyCode = '',
   });
 
   /// Formats clean room number without `#` or prefix
@@ -91,11 +93,34 @@ class RoomModel {
   String get capacityLabel =>
       'Max $adultsCapacity Guests${childrenCapacity > 0 ? " (+ $childrenCapacity Kids)" : ""}';
 
-  /// User friendly bed info label: '1 Bed (1 King Size Bed)'
-  String get bedInfoLabel => '$bedCount Bed ($bedType)';
+  /// User friendly bed info from the rooms `beds` list.
+  String get bedInfoLabel {
+    final label = bedType.trim();
+    if (label.isEmpty) return bedCount > 0 ? '$bedCount Bed' : '';
+    return label;
+  }
 
   /// Whether GST tax applies
   bool get hasGst => gstEnabled && gstRate > 0;
+
+  /// Rooms list puts GST on `data.hotel`, not on each room.
+  RoomModel withHotelGst(Map<String, dynamic>? hotel) {
+    if (hotel == null) return this;
+    final rawEnabled = hotel['gst_enabled'] ?? hotel['gstEnabled'];
+    final rawRate = hotel['tax_percentage'] ?? hotel['taxPercentage'];
+    if (rawEnabled == null && rawRate == null) return this;
+    final enabled = rawEnabled == true;
+    final rate = rawRate is num ? rawRate.toDouble() : double.tryParse(rawRate?.toString() ?? '') ?? 0;
+    if (!enabled || rate <= 0) {
+      return copyWith(gstEnabled: false, gstRate: 0, cgstRate: 0, sgstRate: 0);
+    }
+    return copyWith(
+      gstEnabled: true,
+      gstRate: rate,
+      cgstRate: rate / 2,
+      sgstRate: rate / 2,
+    );
+  }
 
   RoomModel copyWith({
     String? id,
@@ -106,6 +131,7 @@ class RoomModel {
     RoomStatus? status,
     String? currentGuestName,
     String? currentGuestFolioId,
+    bool clearGuest = false,
     int? maxOccupancy,
     List<String>? amenities,
     String? roomTypeId,
@@ -136,6 +162,7 @@ class RoomModel {
     List<dynamic>? futureBookings,
     String? requestedCheckInDate,
     String? requestedCheckOutDate,
+    String? keyCode,
   }) {
     return RoomModel(
       id: id ?? this.id,
@@ -144,8 +171,8 @@ class RoomModel {
       roomType: roomType ?? this.roomType,
       pricePerNight: pricePerNight ?? this.pricePerNight,
       status: status ?? this.status,
-      currentGuestName: currentGuestName ?? this.currentGuestName,
-      currentGuestFolioId: currentGuestFolioId ?? this.currentGuestFolioId,
+      currentGuestName: clearGuest ? null : (currentGuestName ?? this.currentGuestName),
+      currentGuestFolioId: clearGuest ? null : (currentGuestFolioId ?? this.currentGuestFolioId),
       maxOccupancy: maxOccupancy ?? this.maxOccupancy,
       amenities: amenities ?? this.amenities,
       roomTypeId: roomTypeId ?? this.roomTypeId,
@@ -176,6 +203,7 @@ class RoomModel {
       futureBookings: futureBookings ?? this.futureBookings,
       requestedCheckInDate: requestedCheckInDate ?? this.requestedCheckInDate,
       requestedCheckOutDate: requestedCheckOutDate ?? this.requestedCheckOutDate,
+      keyCode: keyCode ?? this.keyCode,
     );
   }
 
@@ -223,15 +251,33 @@ class RoomModel {
       }
     } else if (roomTypeData is String && roomTypeData.isNotEmpty) {
       typeName = roomTypeData;
+    } else {
+      final flatTypeName = json['room_type_name']?.toString() ?? json['roomTypeName']?.toString();
+      if (flatTypeName != null && flatTypeName.trim().isNotEmpty) {
+        typeName = flatTypeName.trim();
+      }
     }
 
-    // Room-level amenities override or supplement
-    if (json['amenities'] is List && (json['amenities'] as List).isNotEmpty) {
+    // Room-level amenities override or supplement (handles List or comma-separated String)
+    if (json['amenities'] is String && (json['amenities'] as String).trim().isNotEmpty) {
+      roomAmenities = (json['amenities'] as String)
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+    } else if (json['amenities'] is List && (json['amenities'] as List).isNotEmpty) {
       roomAmenities = (json['amenities'] as List).map((e) => e.toString()).toList();
     }
 
-    // Price resolution: customPricePerNight takes precedence over roomType.basePrice
-    final customPrice = (json['customPricePerNight'] as num?)?.toDouble();
+    if (typeImages.isEmpty && json['images'] is List) {
+      typeImages.addAll((json['images'] as List).map((e) => e.toString()));
+    }
+
+    // Price resolution: customPricePerNight / custom_price_per_night takes precedence
+    final rawCustomPrice = json['custom_price_per_night'] ?? json['customPricePerNight'];
+    final customPrice = (rawCustomPrice is num)
+        ? rawCustomPrice.toDouble()
+        : double.tryParse(rawCustomPrice?.toString() ?? '');
     double resolvedPrice;
     if (customPrice != null && customPrice > 0) {
       resolvedPrice = customPrice;
@@ -245,12 +291,26 @@ class RoomModel {
       resolvedPrice = 4000.0;
     }
 
-    // Bed configuration
-    final bedCount = (json['bedCount'] as num?)?.toInt() ?? typeBedCount;
-    final bedType = json['bedType']?.toString() ?? typeBedType;
+    // Bed configuration. Prefer the beds array, then bed_count / bed_type.
+    var bedCount = typeBedCount;
+    var bedType = typeBedType;
+    final bedsLabel = _bedsLabel(json['beds']);
+    if (bedsLabel != null) {
+      bedCount = bedsLabel.count;
+      bedType = bedsLabel.label;
+    } else {
+      final rawBedCount = json['bed_count'] ?? json['bedCount'];
+      bedCount = (rawBedCount is num)
+          ? rawBedCount.toInt()
+          : (int.tryParse(rawBedCount?.toString() ?? '') ?? typeBedCount);
+      bedType = json['bed_type']?.toString() ?? json['bedType']?.toString() ?? typeBedType;
+    }
 
-    // Seating capacity
-    final seating = (json['seatingCapacity'] as num?)?.toInt() ?? (adults + children);
+    // Seating capacity (supports seating_capacity / seatingCapacity)
+    final rawSeating = json['seating_capacity'] ?? json['seatingCapacity'];
+    final seating = (rawSeating is num)
+        ? rawSeating.toInt()
+        : (int.tryParse(rawSeating?.toString() ?? '') ?? (adults + children));
 
     // Status parsing
     final rawStatus = json['status']?.toString().toUpperCase() ?? 'AVAILABLE';
@@ -263,10 +323,11 @@ class RoomModel {
       parsedStatus = RoomStatus.maintenance;
     }
 
-    final rawRoomNum = json['roomNumber']?.toString() ?? '';
-    final formattedRoomNum =
-        rawRoomNum.startsWith('#') ? rawRoomNum : '#$rawRoomNum';
-    final rawFloor = json['floor']?.toString() ?? '1';
+    final rawRoomNum = (json['room_number'] ?? json['roomNumber'] ?? '').toString();
+    final formattedRoomNum = rawRoomNum.isEmpty
+        ? ''
+        : (rawRoomNum.startsWith('#') ? rawRoomNum : '#$rawRoomNum');
+    final rawFloor = (json['floor'] ?? '1').toString();
     final floorStr =
         rawFloor.toLowerCase().contains('floor') ? rawFloor : 'Floor $rawFloor';
 
@@ -296,8 +357,8 @@ class RoomModel {
       amenities: roomAmenities.isNotEmpty
           ? roomAmenities
           : const ['Wi-Fi', 'AC', 'TV', 'En-suite Bath'],
-      roomTypeId: typeId,
-      hotelId: json['hotel']?.toString(),
+      roomTypeId: typeId ?? json['room_type_id']?.toString() ?? json['roomTypeId']?.toString(),
+      hotelId: json['hotel']?.toString() ?? json['hotel_id']?.toString(),
       customPricePerNight: customPrice,
       basePrice: basePrice,
       bedCount: bedCount,
@@ -305,13 +366,13 @@ class RoomModel {
       adultsCapacity: adults,
       childrenCapacity: children,
       seatingCapacity: seating,
-      cleaningDurationMinutes: (json['cleaningDurationMinutes'] as num?)?.toInt() ?? 15,
+      cleaningDurationMinutes: _readInt(json['cleaning_duration_minutes'] ?? json['cleaningDurationMinutes']) ?? 15,
       gstEnabled: json['gstEnabled'] as bool? ?? typeGstEnabled,
       gstRate: (json['gstRate'] as num?)?.toDouble() ?? typeGstRate,
       cgstRate: (json['cgstRate'] as num?)?.toDouble() ?? typeCgstRate,
       sgstRate: (json['sgstRate'] as num?)?.toDouble() ?? typeSgstRate,
       taxInclusive: json['taxInclusive'] as bool? ?? typeTaxInclusive,
-      isAvailable: json['isAvailable'] == true,
+      isAvailable: json['isAvailable'] == true || json['is_active'] == true || json['isActive'] == true,
       isAvailableForDates: json['isAvailableForDates'] == true,
       dateStatus: json['dateStatus']?.toString() ?? 'AVAILABLE',
       statusToday: json['statusToday']?.toString() ?? 'AVAILABLE',
@@ -324,6 +385,7 @@ class RoomModel {
       futureBookings: (json['futureBookings'] as List<dynamic>?) ?? const [],
       requestedCheckInDate: inDate,
       requestedCheckOutDate: outDate,
+      keyCode: (json['key_code'] ?? json['keyCode'] ?? '').toString().trim(),
     );
   }
 
@@ -363,5 +425,53 @@ class RoomModel {
       'dateStatus': dateStatus,
       'notes': notes,
     };
+  }
+}
+
+int? _readInt(Object? value) {
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '');
+}
+
+({int count, String label})? _bedsLabel(dynamic raw) {
+  if (raw is! List || raw.isEmpty) return null;
+  final parts = <String>[];
+  var total = 0;
+  for (final item in raw) {
+    if (item is! Map) continue;
+    final count = (item['bed_count'] as num?)?.toInt() ?? int.tryParse('${item['bed_count']}') ?? 1;
+    final line = _bedLine(count, '${item['bed_type'] ?? ''}');
+    if (line.isEmpty) continue;
+    total += count < 1 ? 1 : count;
+    parts.add(line);
+  }
+  if (parts.isEmpty) return null;
+  return (count: total, label: parts.join(', '));
+}
+
+String _bedLine(int count, String rawType) {
+  final type = rawType.trim();
+  if (type.isEmpty) return '';
+  if (RegExp(r'^\d+\s+').hasMatch(type)) return type;
+  final safeCount = count < 1 ? 1 : count;
+  return '$safeCount ${_displayBedType(type)}';
+}
+
+String _displayBedType(String raw) {
+  switch (raw.trim().toLowerCase()) {
+    case 'king':
+      return 'King Size Bed';
+    case 'queen':
+      return 'Queen Size Bed';
+    case 'single':
+      return 'Single Bed';
+    case 'double':
+      return 'Double Bed';
+    case 'super king':
+      return 'Super King Bed';
+    case 'extra mattress':
+      return 'Extra Mattress';
+    default:
+      return raw.trim();
   }
 }

@@ -80,6 +80,8 @@ class GuestFolioModel {
   final String bookingStatus; // 'Confirmed', 'Completed', 'Cancelled'
   final String floor;
   final int numberOfGuests;
+  final int? adultCount;
+  final int? childCount;
   final String gender;
   final DateTime? dateOfBirth;
   final String nationality;
@@ -104,6 +106,16 @@ class GuestFolioModel {
   final List<PaymentRecordModel> payments;
   final List<ChargeItemModel> services;
   final List<StayActivityModel> activityTimeline;
+  final String? secondaryGuestName;
+  final String? createdByName;
+  final List<String> idImageUrls;
+  final List<String> signatureUrls;
+  final DateTime? actualCheckIn;
+  final DateTime? actualCheckOut;
+  final double gstRate;
+  final double cgstAmount;
+  final double sgstAmount;
+  final String? roomId;
 
   const GuestFolioModel({
     required this.id,
@@ -132,6 +144,8 @@ class GuestFolioModel {
     this.bookingStatus = 'Confirmed',
     this.floor = 'Floor 1',
     this.numberOfGuests = 2,
+    this.adultCount,
+    this.childCount,
     this.gender = 'Male',
     this.dateOfBirth,
     this.nationality = 'Indian',
@@ -152,6 +166,16 @@ class GuestFolioModel {
     this.payments = const [],
     this.services = const [],
     this.activityTimeline = const [],
+    this.secondaryGuestName,
+    this.createdByName,
+    this.idImageUrls = const [],
+    this.signatureUrls = const [],
+    this.actualCheckIn,
+    this.actualCheckOut,
+    this.gstRate = 0,
+    this.cgstAmount = 0,
+    this.sgstAmount = 0,
+    this.roomId,
   });
 
   // Effective Financial Calculations
@@ -170,7 +194,9 @@ class GuestFolioModel {
 
   // Stay Calculations
   int get totalNights {
-    final diff = checkOutDate.difference(checkInDate).inDays;
+    final start = DateTime(checkInDate.year, checkInDate.month, checkInDate.day);
+    final end = DateTime(checkOutDate.year, checkOutDate.month, checkOutDate.day);
+    final diff = end.difference(start).inDays;
     return diff <= 0 ? 1 : diff;
   }
 
@@ -288,6 +314,16 @@ class GuestFolioModel {
     List<PaymentRecordModel>? payments,
     List<ChargeItemModel>? services,
     List<StayActivityModel>? activityTimeline,
+    String? secondaryGuestName,
+    String? createdByName,
+    List<String>? idImageUrls,
+    List<String>? signatureUrls,
+    DateTime? actualCheckIn,
+    DateTime? actualCheckOut,
+    double? gstRate,
+    double? cgstAmount,
+    double? sgstAmount,
+    String? roomId,
   }) {
     return GuestFolioModel(
       id: id ?? this.id,
@@ -316,6 +352,8 @@ class GuestFolioModel {
       bookingStatus: bookingStatus ?? this.bookingStatus,
       floor: floor ?? this.floor,
       numberOfGuests: numberOfGuests ?? this.numberOfGuests,
+      adultCount: this.adultCount,
+      childCount: this.childCount,
       gender: gender ?? this.gender,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       nationality: nationality ?? this.nationality,
@@ -336,6 +374,16 @@ class GuestFolioModel {
       payments: payments ?? this.payments,
       services: services ?? this.services,
       activityTimeline: activityTimeline ?? this.activityTimeline,
+      secondaryGuestName: secondaryGuestName ?? this.secondaryGuestName,
+      createdByName: createdByName ?? this.createdByName,
+      idImageUrls: idImageUrls ?? this.idImageUrls,
+      signatureUrls: signatureUrls ?? this.signatureUrls,
+      actualCheckIn: actualCheckIn ?? this.actualCheckIn,
+      actualCheckOut: actualCheckOut ?? this.actualCheckOut,
+      gstRate: gstRate ?? this.gstRate,
+      cgstAmount: cgstAmount ?? this.cgstAmount,
+      sgstAmount: sgstAmount ?? this.sgstAmount,
+      roomId: roomId ?? this.roomId,
     );
   }
 
@@ -352,22 +400,35 @@ class GuestFolioModel {
     }
 
     Map<String, dynamic> roomData = {};
-    if (json['room'] is Map<String, dynamic>) {
-      roomData = json['room'] as Map<String, dynamic>;
+    if (json['room'] is Map) {
+      roomData = Map<String, dynamic>.from(json['room'] as Map);
+    } else if (json['rooms'] is List && (json['rooms'] as List).isNotEmpty) {
+      final firstRoom = (json['rooms'] as List).first;
+      if (firstRoom is Map) {
+        roomData = Map<String, dynamic>.from(firstRoom);
+      }
     }
     final roomTypeData = json['roomType'];
 
     String typeName = 'Standard Room';
+    var rateFromCatalog = false;
     double rate = 4000;
-    if (roomTypeData is Map<String, dynamic>) {
-      typeName = roomTypeData['name']?.toString() ?? 'Standard Room';
-      rate = (roomTypeData['basePrice'] as num?)?.toDouble() ?? 4000;
+    if (roomTypeData is Map) {
+      final roomType = Map<String, dynamic>.from(roomTypeData);
+      typeName = roomType['name']?.toString() ?? 'Standard Room';
+      if (roomType['basePrice'] is num) {
+        rate = (roomType['basePrice'] as num).toDouble();
+        rateFromCatalog = true;
+      }
     } else if (roomTypeData is String && roomTypeData.isNotEmpty) {
       typeName = roomTypeData;
+    } else if (roomData['room_type_name'] != null) {
+      typeName = roomData['room_type_name'].toString();
     }
 
     final roomNum = json['roomNumber']?.toString() ??
         roomData['roomNumber']?.toString() ??
+        roomData['room_number']?.toString() ??
         (json['roomNumbers'] is List && (json['roomNumbers'] as List).isNotEmpty
             ? (json['roomNumbers'] as List).first.toString()
             : '01');
@@ -378,12 +439,15 @@ class GuestFolioModel {
 
     final guestName = guestData['fullName']?.toString() ??
         guestData['name']?.toString() ??
+        json['primary_guest_name']?.toString() ??
         json['guestName']?.toString() ??
         'Guest';
 
     final email = guestData['email']?.toString() ?? json['email']?.toString() ?? '';
     final phone = guestData['phone']?.toString() ??
         guestData['mobileNumber']?.toString() ??
+        json['mobile_number']?.toString() ??
+        json['mobileNumber']?.toString() ??
         json['phone']?.toString() ??
         '';
 
@@ -392,7 +456,8 @@ class GuestFolioModel {
             : null) ??
         guestData['govtIdType']?.toString() ??
         guestData['idType']?.toString() ??
-        'Aadhaar Card';
+        json['id_type']?.toString() ??
+        '';
     final govtIdNumber = (guestData['idProof'] is Map
             ? guestData['idProof']['idNumber']?.toString()
             : null) ??
@@ -400,8 +465,8 @@ class GuestFolioModel {
         guestData['idNumber']?.toString() ??
         '';
 
-    final checkInStr = json['checkInDate']?.toString();
-    final checkOutStr = json['checkOutDate']?.toString();
+    final checkInStr = (json['check_in_date'] ?? json['checkInDate'])?.toString();
+    final checkOutStr = (json['check_out_date'] ?? json['checkOutDate'])?.toString();
     final checkIn = checkInStr != null
         ? DateTime.tryParse(checkInStr) ?? DateTime.now()
         : DateTime.now();
@@ -410,31 +475,43 @@ class GuestFolioModel {
             DateTime.now().add(const Duration(days: 1))
         : DateTime.now().add(const Duration(days: 1));
 
-    final nights = (json['numberOfNights'] as num?)?.toInt() ?? 1;
-    final total = (json['totalAmount'] as num?)?.toDouble() ??
+    final nights = (json['nights'] as num?)?.toInt() ??
+        (json['number_of_nights'] as num?)?.toInt() ??
+        (json['numberOfNights'] as num?)?.toInt() ??
+        1;
+    if (!rateFromCatalog && json['base_amount'] is num && nights > 0) {
+      rate = (json['base_amount'] as num).toDouble() / nights;
+    }
+    final total = (json['total_amount'] as num?)?.toDouble() ??
+        (json['totalAmount'] as num?)?.toDouble() ??
+        (json['base_amount'] as num?)?.toDouble() ??
         (json['baseAmount'] as num?)?.toDouble() ??
         (json['total'] as num?)?.toDouble() ??
         (rate * nights);
-    final advance = (json['paidAmount'] as num?)?.toDouble() ??
+    final advance = (json['paid_amount'] as num?)?.toDouble() ??
+        (json['paidAmount'] as num?)?.toDouble() ??
         (json['advancePaid'] as num?)?.toDouble() ??
         (json['advancePayment'] as num?)?.toDouble() ??
         (json['advance'] as num?)?.toDouble() ??
         total;
 
-    final bookingNum = json['bookingNumber']?.toString() ??
+    final bookingNum = json['booking_number']?.toString() ??
+        json['bookingNumber']?.toString() ??
         (json['_id'] != null ? 'BK-${json['_id'].toString().substring(0, json['_id'].toString().length > 6 ? 6 : json['_id'].toString().length)}' : 'BK-1001');
 
-    final rawStatus = json['status']?.toString().toUpperCase() ?? '';
+    final rawStatus = (json['booking_status'] ?? json['status'] ?? '').toString().toUpperCase();
+    final actualOut = json['actual_check_out'] ?? json['actualCheckOut'];
+    final hasActualCheckout = actualOut != null && actualOut.toString().trim().isNotEmpty;
     FolioStatus status = FolioStatus.inHouse;
     if (rawStatus == 'DEPARTED' ||
         rawStatus == 'CHECKED_OUT' ||
         rawStatus == 'CHECKEDOUT' ||
         rawStatus == 'COMPLETED' ||
-        json['actualCheckOut'] != null) {
+        hasActualCheckout) {
       status = FolioStatus.departed;
     } else if (rawStatus == 'CANCELLED') {
       status = FolioStatus.cancelled;
-    } else if (rawStatus == 'RESERVED' || rawStatus == 'PENDING') {
+    } else if (rawStatus == 'RESERVED' || rawStatus == 'PENDING' || rawStatus == 'CONFIRMED') {
       status = FolioStatus.confirmed;
     } else {
       status = FolioStatus.inHouse;
@@ -445,23 +522,39 @@ class GuestFolioModel {
         ? floorNum
         : 'Floor $floorNum';
 
+    int? adultCount;
+    int? childCount;
     int guestCount = 1;
     if (json['guestsCount'] is Map) {
-      final gc = json['guestsCount'] as Map<String, dynamic>;
-      guestCount = ((gc['adults'] as num?)?.toInt() ?? 1) +
-          ((gc['children'] as num?)?.toInt() ?? 0);
-    } else if (json['adults'] != null) {
-      guestCount = ((json['adults'] as num?)?.toInt() ?? 1) +
-          ((json['children'] as num?)?.toInt() ?? 0);
+      final gc = Map<String, dynamic>.from(json['guestsCount'] as Map);
+      adultCount = (gc['adults'] as num?)?.toInt() ?? 1;
+      childCount = (gc['children'] as num?)?.toInt() ?? 0;
+      guestCount = adultCount + childCount;
+    } else if (json['adults'] != null || json['children'] != null) {
+      adultCount = (json['adults'] as num?)?.toInt() ?? 1;
+      childCount = (json['children'] as num?)?.toInt() ?? 0;
+      guestCount = adultCount + childCount;
     }
 
     final receiptNum = json['receiptNumber']?.toString();
-    final paymentMethod = json['paymentMethod']?.toString() ??
+    final payments = _paymentHistory(json['payment_history'] ?? json['paymentHistory'], checkIn);
+    final paymentMethod = json['payment_method']?.toString() ??
+        json['paymentMethod']?.toString() ??
         json['paymentMode']?.toString() ??
-        'UPI';
+        (payments.isNotEmpty ? payments.first.paymentMethod : 'UPI');
+    final tax = _amount(json['tax_amount'] ?? json['gst_amount'] ?? json['taxAmount'] ?? json['tax']);
+    final discount = _amount(json['discount_amount'] ?? json['discountAmount'] ?? json['discount']);
+    final roomCharges = _amount(json['base_amount'] ?? json['baseAmount'] ?? json['roomCharges']);
+    final notes = json['notes']?.toString();
+    final secondaryGuest = json['secondary_guest_name']?.toString() ?? json['secondaryGuestName']?.toString();
+    final roomId = _bookingRoomId(json['room_id'] ?? json['roomId'], roomData['id']);
+    String? createdByName;
+    if (json['creator'] is Map) {
+      createdByName = Map<String, dynamic>.from(json['creator'] as Map)['name']?.toString();
+    }
 
     return GuestFolioModel(
-      id: json['_id']?.toString() ?? bookingNum,
+      id: (json['_id'] ?? json['id'] ?? bookingNum).toString(),
       bookingId: bookingNum,
       receiptNumber: receiptNum,
       guestId: gId,
@@ -480,14 +573,95 @@ class GuestFolioModel {
       advancePaid: advance,
       totalAmount: total,
       paymentMode: paymentMethod,
-      keycardNumber: json['keycardNumber']?.toString() ?? 'KC-$roomNum',
+      keycardNumber: json['keycard_number']?.toString() ?? json['keycardNumber']?.toString() ?? 'KC-$roomNum',
       floor: floorStr,
       numberOfGuests: guestCount,
-      gender: guestData['gender']?.toString() ?? json['gender']?.toString() ?? 'Male',
+      adultCount: adultCount,
+      childCount: childCount,
+      gender: guestData['gender']?.toString() ?? json['gender']?.toString() ?? '',
       nationality: guestData['nationality']?.toString() ?? json['nationality']?.toString() ?? 'Indian',
       address: guestData['address']?.toString() ?? json['address']?.toString() ?? '',
       bookingSource: json['bookingSource']?.toString() ?? 'Direct / Walk-In',
-      bookingStatus: json['bookingStatus']?.toString() ?? 'Confirmed',
+      bookingStatus: json['booking_status']?.toString() ?? json['bookingStatus']?.toString() ?? 'Confirmed',
+      guestNotes: (notes != null && notes.trim().isNotEmpty) ? notes.trim() : null,
+      secondaryGuestName: (secondaryGuest != null && secondaryGuest.trim().isNotEmpty) ? secondaryGuest.trim() : null,
+      createdByName: (createdByName != null && createdByName.trim().isNotEmpty) ? createdByName.trim() : null,
+      roomCharges: roomCharges,
+      discount: discount,
+      tax: tax,
+      payments: payments,
+      extraCharges: _amount(json['extra_charges_total'] ?? json['extraCharges']),
+      idImageUrls: _mediaUrls(json['images']),
+      signatureUrls: _mediaUrls(json['signatures']),
+      actualCheckIn: DateTime.tryParse((json['actual_check_in'] ?? json['actualCheckIn'] ?? '').toString()),
+      actualCheckOut: DateTime.tryParse((json['actual_check_out'] ?? json['actualCheckOut'] ?? '').toString()),
+      gstRate: _amount(json['gst_rate'] ?? json['gstRate']),
+      cgstAmount: _amount(json['cgst_amount'] ?? json['cgstAmount']),
+      sgstAmount: _amount(json['sgst_amount'] ?? json['sgstAmount']),
+      roomId: roomId,
     );
   }
+}
+
+String? _bookingRoomId(dynamic raw, dynamic fallback) {
+  if (raw is List && raw.isNotEmpty) {
+    final first = raw.first?.toString().trim() ?? '';
+    if (first.isNotEmpty) return first;
+  }
+  final direct = raw?.toString().trim() ?? '';
+  if (direct.isNotEmpty && direct != 'null' && !direct.startsWith('[')) return direct;
+  final fromRoom = fallback?.toString().trim() ?? '';
+  if (fromRoom.isNotEmpty && fromRoom != 'null') return fromRoom;
+  return null;
+}
+
+double _amount(dynamic value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+List<String> _mediaUrls(dynamic raw) {
+  if (raw is! List) return const [];
+  final urls = <String>[];
+  for (final item in raw) {
+    if (item is String && item.trim().isNotEmpty) {
+      urls.add(item.trim());
+    } else if (item is Map) {
+      final url = item['url'] ?? item['image_url'] ?? item['path'];
+      if (url != null && url.toString().trim().isNotEmpty) {
+        urls.add(url.toString().trim());
+      }
+    }
+  }
+  return urls;
+}
+
+List<PaymentRecordModel> _paymentHistory(dynamic raw, DateTime fallbackDate) {
+  if (raw is! List) return const [];
+  final records = <PaymentRecordModel>[];
+  for (final item in raw) {
+    if (item is! Map) continue;
+    final map = Map<String, dynamic>.from(item);
+    final when = DateTime.tryParse(
+          (map['received_at'] ?? map['created_at'] ?? map['paid_at'] ?? map['date'] ?? '').toString(),
+        ) ??
+        fallbackDate;
+    final receivedBy = map['received_by'];
+    final receiverName = receivedBy is Map
+        ? (receivedBy['name'] ?? '').toString()
+        : (receivedBy ?? '').toString();
+    final source = (map['source'] ?? '').toString();
+    final reference = [source, receiverName].where((part) => part.trim().isNotEmpty).join(' · ');
+    records.add(
+      PaymentRecordModel(
+        id: (map['id'] ?? records.length + 1).toString(),
+        date: when,
+        amount: _amount(map['amount']),
+        paymentMethod: (map['payment_method'] ?? map['paymentMethod'] ?? 'UPI').toString(),
+        reference: reference,
+        status: (map['status'] ?? 'PAID').toString(),
+      ),
+    );
+  }
+  return records;
 }

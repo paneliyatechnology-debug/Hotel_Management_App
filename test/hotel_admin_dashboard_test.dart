@@ -100,13 +100,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Financial & Revenue Telemetry'), findsOneWidget);
-      expect(find.text("TODAY'S REVENUE"), findsOneWidget);
-      expect(find.text("TODAY'S EARNINGS"), findsOneWidget);
-      expect(find.text('TOTAL GUESTS'), findsOneWidget);
-      expect(find.text('MONTHLY REVENUE'), findsOneWidget);
+      expect(find.text("Today's revenue"), findsOneWidget);
+      expect(find.text("Today's earnings"), findsOneWidget);
+      expect(find.text('Guests'), findsOneWidget);
+      expect(find.text('This month'), findsOneWidget);
       expect(find.text('Live Real-time Audit'), findsOneWidget);
-      expect(find.text('Live Counter'), findsOneWidget);
-      expect(find.text('78.5% Margin'), findsOneWidget);
+      expect(find.text('Live Counter'), findsNothing);
+      expect(find.text('In-House'), findsNothing);
+      expect(find.text('Monthly Total'), findsNothing);
     });
 
     testWidgets('Hotel Admin Charts render Live Room Occupancy & Spline dynamics',
@@ -176,7 +177,7 @@ void main() {
       state.openDrawer();
       await tester.pumpAndSettle();
 
-      expect(find.text('GRAND ROYALE'), findsOneWidget);
+      expect(find.text('MYOWNPMS'), findsWidgets);
       expect(find.text('Hotel Admin PMS'), findsOneWidget);
       expect(find.text('MAIN NAVIGATION'), findsOneWidget);
       expect(find.text('Dashboard'), findsOneWidget);
@@ -201,12 +202,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // Top Header verifies Hotel Admin
-      expect(find.text('GRAND ROYALE • HOTEL ADMIN'), findsOneWidget);
+      expect(find.text('MYOWNPMS • HOTEL ADMIN'), findsOneWidget);
 
 
       // Verifies Hotel Admin Dashboard View widgets
       expect(find.byType(HotelAdminDashboardView), findsOneWidget);
-      expect(find.text("TODAY'S REVENUE"), findsOneWidget);
+      expect(find.text("Today's revenue"), findsOneWidget);
       expect(find.text('Live Room Occupancy'), findsOneWidget);
 
       await tester.scrollUntilVisible(

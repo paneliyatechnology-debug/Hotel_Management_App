@@ -13,7 +13,7 @@ class ModernWelcomeBanner extends StatelessWidget {
     super.key,
     this.staffName = 'Jason',
     this.role = 'Front Desk Lead',
-    this.resortName = 'Mayal Resort 2',
+    this.resortName = '',
     this.availableRooms = 10,
     required this.onQuickCheckIn,
   });

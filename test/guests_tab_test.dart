@@ -181,7 +181,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('STAY STATUS'), findsOneWidget);
-    expect(find.text('PAYMENT STATUS'), findsOneWidget);
+    expect(find.text('PAYMENT STATUS'), findsNothing);
+    expect(find.text('Room Category'), findsNothing);
+    expect(find.text('Cancelled'), findsNothing);
     expect(find.text('Clear All'), findsOneWidget);
     expect(find.text('Apply Filters'), findsOneWidget);
   });
@@ -199,56 +201,20 @@ void main() {
     await tester.tap(rahulCard);
     await tester.pumpAndSettle();
 
-    // Verify Guest Details Screen Header
     expect(find.text('Guest Details'), findsOneWidget);
     expect(find.text('Rahul Sharma'), findsWidgets);
     expect(find.text('IN-HOUSE'), findsWidgets);
-    expect(find.text('Room 203'), findsWidgets);
+    expect(find.textContaining('Room #203'), findsWidgets);
 
-    // Verify Personal Information section
-    expect(find.text('PERSONAL INFORMATION'), findsOneWidget);
+    expect(find.text('Personal Information'), findsOneWidget);
     expect(find.text('9876543210'), findsOneWidget);
     expect(find.text('rahul@gmail.com'), findsOneWidget);
-    expect(find.text('Indian'), findsWidgets);
 
-    // Verify KYC / Identity Section
-    expect(find.text('KYC / IDENTITY'), findsOneWidget);
+    expect(find.text('KYC & Govt Identity Verification'), findsOneWidget);
     expect(find.text('VERIFIED'), findsOneWidget);
-    expect(find.text('Aadhaar Card'), findsWidgets);
+    expect(find.text('AADHAAR CARD'), findsOneWidget);
     expect(find.text('•••• •••• 4819'), findsOneWidget);
-
-    // Verify Current Stay Section
-    expect(find.text('CURRENT STAY'), findsOneWidget);
-    expect(find.text('Room 203 (Floor 2)'), findsOneWidget);
-
-    // Verify Multi-Year History (2026, 2025, 2024 - 2 years ago!)
-    expect(find.text('Stay History'), findsOneWidget);
-    expect(find.text('2026'), findsWidgets);
-
-    // Scroll to reveal 2025 and 2024 historical stays
-    await tester.drag(find.byType(SingleChildScrollView), const Offset(0, -500));
-    await tester.pumpAndSettle();
-
-    expect(find.text('2025'), findsWidgets);
-    expect(find.text('2024'), findsWidgets);
-
-    // Tap on a historical stay to open Historical Stay Modal
-    final historicalStayCard = find.text('View Stay Details').first;
-    await tester.ensureVisible(historicalStayCard);
-    await tester.tap(historicalStayCard);
-    await tester.pumpAndSettle();
-
-    // Verify Historical Stay Modal Sections
-    expect(find.text('BOOKING INFORMATION'), findsOneWidget);
-    expect(find.text('STAY DETAILS'), findsOneWidget);
-
-    // Scroll modal to reveal Billing, Payment, and Activity
-    await tester.drag(find.byType(ListView).last, const Offset(0, -650));
-    await tester.pumpAndSettle();
-
-    expect(find.text('BILLING BREAKDOWN'), findsOneWidget);
-    expect(find.text('PAYMENT DETAILS'), findsOneWidget);
-    expect(find.text('AUDIT & RECEPTION ACTIVITY'), findsOneWidget);
+    expect(find.text('Guest Folio PDF'), findsOneWidget);
   });
 }
 

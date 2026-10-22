@@ -45,3 +45,11 @@ class TokenRefreshRequested extends AuthEvent {
 class ProfileRefreshRequested extends AuthEvent {
   const ProfileRefreshRequested();
 }
+
+class ForgotPasswordRequested extends AuthEvent {
+  final String email;
+  const ForgotPasswordRequested({required this.email});
+
+  @override
+  List<Object?> get props => [email];
+}

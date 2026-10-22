@@ -1,12 +1,17 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../rooms/data/models/room_model.dart';
+import '../../data/models/booking_list_query.dart';
+import '../../data/models/hotel_stats_model.dart';
+import '../../data/models/room_live_update.dart';
 import '../../domain/repositories/dashboard_repository.dart';
+import '../../../rooms/data/models/room_type_model.dart';
 import 'dashboard_event.dart';
 import 'dashboard_state.dart';
 
 class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
   final IDashboardRepository repository;
+  BookingListQuery _guestQuery = const BookingListQuery();
 
   DashboardBloc({required this.repository}) : super(const DashboardState()) {
     on<LoadDashboardDataEvent>(_onLoadDashboardData);
@@ -19,6 +24,11 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     on<AddFolioChargeEvent>(_onAddFolioCharge);
     on<UpdateFolioKeycardEvent>(_onUpdateFolioKeycard);
     on<LoadBookingsEvent>(_onLoadBookings);
+    on<LiveRoomSyncEvent>(_onLiveRoomSync);
+    on<QuietRefreshLiveRoomsEvent>(_onQuietRefreshLiveRooms);
+    on<ApplyLiveBookingEvent>(_onApplyLiveBooking);
+    on<ApplyCategoryCountsEvent>(_onApplyCategoryCounts);
+    on<ApplyLiveDashboardEvent>(_onApplyLiveDashboard);
   }
 
   Future<void> _onLoadBookings(
@@ -29,20 +39,16 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       emit(state.copyWith(status: DashboardStatus.loading));
     }
     try {
-      final folios = await repository.fetchBookings(
-        status: event.status,
-        search: event.search,
-        page: event.page,
-        limit: event.limit,
-      );
-      if (folios.isNotEmpty || state.folios.isEmpty) {
-        emit(state.copyWith(
-          status: DashboardStatus.loaded,
-          folios: folios,
-        ));
-      } else {
-        emit(state.copyWith(status: DashboardStatus.loaded));
-      }
+      final query = event.query ?? _guestQuery;
+      _guestQuery = query;
+      final folios = await repository.fetchBookings(query: query);
+      final rooms = await repository.getRooms();
+      emit(state.copyWith(
+        status: DashboardStatus.loaded,
+        folios: folios,
+        allRooms: rooms,
+        filteredRooms: _applyFilters(rooms, state.searchQuery, state.selectedFloor, state.selectedStatus),
+      ));
     } catch (_) {
       emit(state.copyWith(status: DashboardStatus.loaded));
     }
@@ -89,11 +95,13 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     LoadDashboardDataEvent event,
     Emitter<DashboardState> emit,
   ) async {
-    emit(state.copyWith(status: DashboardStatus.loading));
+    if (state.status != DashboardStatus.loaded) {
+      emit(state.copyWith(status: DashboardStatus.loading));
+    }
     try {
+      final folios = await repository.getFolios();
       final rooms = await repository.getRooms();
       final roomTypes = await repository.getRoomTypes();
-      final folios = await repository.getFolios();
       final stats = await repository.getStats();
 
       final filtered = _applyFilters(rooms, state.searchQuery, state.selectedFloor, state.selectedStatus);
@@ -107,9 +115,11 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         stats: stats,
       ));
     } catch (e) {
+      final cleanMsg = e.toString().replaceFirst('Exception: ', '');
       emit(state.copyWith(
         status: DashboardStatus.error,
-        errorMessage: e.toString(),
+        errorMessage: cleanMsg,
+        clearSuccess: true,
       ));
     }
   }
@@ -119,9 +129,9 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     Emitter<DashboardState> emit,
   ) async {
     try {
+      final folios = await repository.getFolios();
       final rooms = await repository.getRooms();
       final roomTypes = await repository.getRoomTypes();
-      final folios = await repository.getFolios();
       final stats = await repository.getStats();
 
       final filtered = _applyFilters(rooms, state.searchQuery, state.selectedFloor, state.selectedStatus);
@@ -133,13 +143,173 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         roomTypes: roomTypes,
         folios: folios,
         stats: stats,
+        successMessage: 'Room categories retrieved successfully.',
       ));
     } catch (e) {
+      final cleanMsg = e.toString().replaceFirst('Exception: ', '');
       emit(state.copyWith(
         status: DashboardStatus.error,
-        errorMessage: e.toString(),
+        errorMessage: cleanMsg,
+        clearSuccess: true,
       ));
     }
+  }
+
+  void _onLiveRoomSync(
+    LiveRoomSyncEvent event,
+    Emitter<DashboardState> emit,
+  ) {
+    final patch = event.update.room;
+    final previous = patch == null
+        ? null
+        : state.allRooms.cast<RoomModel?>().firstWhere(
+              (room) => room != null && patch.matches(room),
+              orElse: () => null,
+            );
+    final rooms = patch == null ? state.allRooms : patch.apply(state.allRooms);
+    final counts = event.update.breakdown;
+    var stats = state.stats;
+    if (counts != null) {
+      stats = stats.copyWith(
+        availableVacant: counts.available ?? stats.availableVacant,
+        occupiedInHouse: counts.occupied ?? stats.occupiedInHouse,
+        housekeepingQueue: counts.cleaning ?? stats.housekeepingQueue,
+        maintenanceBlocked: counts.maintenanceBlocked ?? stats.maintenanceBlocked,
+        totalInHouseGuests: counts.guests ?? stats.totalInHouseGuests,
+      );
+    } else if (patch != null && !patch.removed && previous != null && previous.status != patch.status) {
+      stats = stats.copyWith(
+        availableVacant: _shiftCount(stats.availableVacant, RoomStatus.available, previous.status, patch.status),
+        occupiedInHouse: _shiftCount(stats.occupiedInHouse, RoomStatus.occupied, previous.status, patch.status),
+        housekeepingQueue: _shiftCount(stats.housekeepingQueue, RoomStatus.cleaning, previous.status, patch.status),
+        maintenanceBlocked: _shiftCount(stats.maintenanceBlocked, RoomStatus.maintenance, previous.status, patch.status),
+      );
+    }
+    emit(state.copyWith(
+      status: state.status == DashboardStatus.initial ? DashboardStatus.loaded : state.status,
+      allRooms: rooms,
+      filteredRooms: _applyFilters(rooms, state.searchQuery, state.selectedFloor, state.selectedStatus),
+      stats: stats,
+    ));
+  }
+
+  Future<void> _onQuietRefreshLiveRooms(
+    QuietRefreshLiveRoomsEvent event,
+    Emitter<DashboardState> emit,
+  ) async {
+    try {
+      repository.acceptRemoteRoomStatuses();
+      final folios = await repository.getFolios();
+      final rooms = await repository.getRooms();
+      final stats = await repository.getStats();
+      final roomTypes = await repository.getRoomTypes();
+      emit(state.copyWith(
+        status: DashboardStatus.loaded,
+        allRooms: rooms,
+        filteredRooms: _applyFilters(rooms, state.searchQuery, state.selectedFloor, state.selectedStatus),
+        roomTypes: roomTypes,
+        folios: folios,
+        stats: stats,
+      ));
+    } catch (_) {
+      // Keep the rooms already on screen if the refresh fails.
+    }
+  }
+
+  void _onApplyLiveBooking(
+    ApplyLiveBookingEvent event,
+    Emitter<DashboardState> emit,
+  ) {
+    final booking = socketObject(event.data);
+    if (booking == null) return;
+    final inner = booking['primary_guest_name'] == null && booking['booking_status'] == null && booking['data'] is Map
+        ? Map<String, dynamic>.from(booking['data'] as Map)
+        : booking;
+    final applied = repository.applyLiveBooking(inner);
+    emit(state.copyWith(
+      status: state.status == DashboardStatus.initial ? DashboardStatus.loaded : state.status,
+      allRooms: applied.rooms,
+      filteredRooms: _applyFilters(applied.rooms, state.searchQuery, state.selectedFloor, state.selectedStatus),
+      folios: applied.folios,
+    ));
+  }
+
+  void _onApplyCategoryCounts(
+    ApplyCategoryCountsEvent event,
+    Emitter<DashboardState> emit,
+  ) {
+    final payload = socketObject(event.data);
+    if (payload == null) return;
+    final raw = payload['room_categories'] ?? payload['roomCategories'];
+    if (raw is! List || state.roomTypes.isEmpty) return;
+    final countsById = <String, RoomTypeModel>{};
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final parsed = RoomTypeModel.fromJson(Map<String, dynamic>.from(item));
+      if (parsed.id.isEmpty) continue;
+      countsById[parsed.id] = parsed;
+    }
+    if (countsById.isEmpty) return;
+    final roomTypes = [
+      for (final type in state.roomTypes)
+        countsById[type.id] == null ? type : type.withStatusCounts(countsById[type.id]!),
+    ];
+    emit(state.copyWith(roomTypes: roomTypes));
+  }
+
+  void _onApplyLiveDashboard(
+    ApplyLiveDashboardEvent event,
+    Emitter<DashboardState> emit,
+  ) {
+    final payload = socketObject(event.data);
+    if (payload == null) return;
+    final data = payload['data'] is Map ? Map<String, dynamic>.from(payload['data'] as Map) : payload;
+    emit(state.copyWith(stats: _statsFromDashboardSocket(data, state.stats)));
+  }
+
+  HotelStatsModel _statsFromDashboardSocket(Map<String, dynamic> data, HotelStatsModel current) {
+    final rooms = data['room_status_summary'] ?? data['roomStatusSummary'];
+    final roomMap = rooms is Map ? Map<String, dynamic>.from(rooms) : const <String, dynamic>{};
+    final shift = data['shift_collections_today'] ?? data['shiftCollectionsToday'];
+    final shiftMap = shift is Map ? Map<String, dynamic>.from(shift) : const <String, dynamic>{};
+    final kpis = data['kpis'] is Map ? Map<String, dynamic>.from(data['kpis'] as Map) : const <String, dynamic>{};
+    final pulse = data['today_pulse'] ?? data['todayPulse'];
+    final pulseMap = pulse is Map ? Map<String, dynamic>.from(pulse) : const <String, dynamic>{};
+    int? count(dynamic value) => value is num ? value.round() : int.tryParse(value?.toString() ?? '');
+    double? amount(dynamic value) => value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '');
+    final cash = amount(shiftMap['cash_collected'] ?? shiftMap['cashCollected']);
+    final upi = amount(shiftMap['upi_collected'] ?? shiftMap['upiCollected']);
+    final card = amount(shiftMap['card_collected'] ?? shiftMap['cardCollected']);
+    final online = amount(shiftMap['online_collected'] ?? shiftMap['onlineCollected']);
+    final totalShift = amount(shiftMap['total_shift_collected'] ?? shiftMap['totalShiftCollected']);
+    final maintenance = count(roomMap['MAINTENANCE']);
+    final blocked = count(roomMap['BLOCKED']);
+    final maintenanceBlocked = maintenance == null && blocked == null ? null : (maintenance ?? 0) + (blocked ?? 0);
+    final shiftOther = online == null && card == null ? null : (online ?? 0) + (card ?? 0);
+    return current.copyWith(
+      availableVacant: count(roomMap['AVAILABLE']) ?? current.availableVacant,
+      occupiedInHouse: count(roomMap['OCCUPIED']) ?? current.occupiedInHouse,
+      housekeepingQueue: count(roomMap['CLEANING']) ?? current.housekeepingQueue,
+      maintenanceBlocked: maintenanceBlocked ?? current.maintenanceBlocked,
+      totalInHouseGuests: count(pulseMap['current_in_house_guests'] ?? pulseMap['currentInHouseGuests']) ?? current.totalInHouseGuests,
+      todayCash: cash ?? current.todayCash,
+      todayUpi: upi ?? current.todayUpi,
+      todayOnline: shiftOther ?? current.todayOnline,
+      totalToday: totalShift ?? amount(kpis['today_revenue'] ?? kpis['todayRevenue']) ?? current.totalToday,
+      checkedInToday: count(pulseMap['actual_checked_in_today'] ?? pulseMap['actualCheckedInToday']) ?? current.checkedInToday,
+      monthRevenue: amount(kpis['month_revenue'] ?? kpis['monthRevenue']) ?? current.monthRevenue,
+      outstandingDue: amount(kpis['total_outstanding_due'] ?? kpis['totalOutstandingDue']) ?? current.outstandingDue,
+      occupancyRatePercentage: count(kpis['occupancy_rate_percentage'] ?? kpis['occupancyRatePercentage']) ?? current.occupancyRatePercentage,
+      totalPhysicalRooms: count(kpis['total_physical_rooms'] ?? kpis['totalPhysicalRooms']) ?? current.totalPhysicalRooms,
+      activeStaffCount: count(kpis['active_staff_count'] ?? kpis['activeStaffCount']) ?? current.activeStaffCount,
+    );
+  }
+
+  int _shiftCount(int value, RoomStatus slot, RoomStatus from, RoomStatus to) {
+    var next = value;
+    if (slot == from) next -= 1;
+    if (slot == to) next += 1;
+    return next < 0 ? 0 : next;
   }
 
   void _onFilterRooms(
@@ -159,8 +329,16 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     ChangeRoomStatusDashboardEvent event,
     Emitter<DashboardState> emit,
   ) async {
-    await repository.updateRoomStatus(event.roomId, event.newStatus);
-    add(RefreshDashboardDataEvent());
+    try {
+      await repository.updateRoomStatus(event.roomId, event.newStatus);
+      add(RefreshDashboardDataEvent());
+    } catch (e) {
+      emit(state.copyWith(
+        status: DashboardStatus.error,
+        errorMessage: e.toString().replaceFirst('Exception: ', ''),
+        clearSuccess: true,
+      ));
+    }
   }
 
   Future<void> _onCheckoutGuest(

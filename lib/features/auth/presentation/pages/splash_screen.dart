@@ -224,7 +224,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
                         // Platform / Brand Title
                         Text(
-                          'MyOwnPms',
+                          'MYOWNPMS',
                           textAlign: TextAlign.center,
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 32,
@@ -321,7 +321,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
                         // Version info
                         Text(
-                          'MyOwnPms v2026.4 • Secure 256-Bit Session',
+                          'MYOWNPMS v2026.4 • Secure 256-Bit Session',
                           style: GoogleFonts.inter(
                             fontSize: 10,
                             color: Colors.white38,

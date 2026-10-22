@@ -1,27 +1,21 @@
-import 'package:flutter/gestures.dart';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 
-/// Unconditionally claims pointer gestures so parent SingleChildScrollView never steals drawing touches
-class _EagerPanGestureRecognizer extends PanGestureRecognizer {
-  @override
-  void addAllowedPointer(PointerDownEvent event) {
-    super.addAllowedPointer(event);
-    resolve(GestureDisposition.accepted);
-  }
-}
-
-/// Available signature capture modes matching hotel web and luxury mobile standard
+/// Camera photo of a signed paper, or a finger signature on the digital pad.
 enum SignatureMode {
-  screenDraw,
-  phoneQr,
-  type,
+  camera,
+  pad,
 }
 
-/// A luxury, pixel-perfect digital signature pad with Screen Draw, Phone QR, and Typed Cursive calligraphy modes
+/// Guest signature: capture a photo from the camera, or sign on the digital pad.
 class SignaturePadWidget extends StatefulWidget {
   final List<Offset?> initialPoints;
+  final String? initialPhotoPath;
   final ValueChanged<List<Offset?>> onSignatureChanged;
+  final ValueChanged<String?>? onPhotoChanged;
   final VoidCallback? onCleared;
   final bool isRequired;
   final String signerName;
@@ -30,7 +24,9 @@ class SignaturePadWidget extends StatefulWidget {
   const SignaturePadWidget({
     super.key,
     this.initialPoints = const [],
+    this.initialPhotoPath,
     required this.onSignatureChanged,
+    this.onPhotoChanged,
     this.onCleared,
     this.isRequired = true,
     this.signerName = '',
@@ -42,121 +38,67 @@ class SignaturePadWidget extends StatefulWidget {
 }
 
 class _SignaturePadWidgetState extends State<SignaturePadWidget> {
-  SignatureMode _activeMode = SignatureMode.screenDraw;
+  SignatureMode _activeMode = SignatureMode.camera;
   late List<Offset?> _points;
-  late TextEditingController _typeController;
-  int _selectedFontStyleIndex = 0;
-
-  final List<String> _fontStyleLabels = ['Cursive', 'Calligraphy', 'Casual'];
+  String? _photoPath;
 
   @override
   void initState() {
     super.initState();
     _points = List.from(widget.initialPoints);
-    _typeController = TextEditingController(
-      text: widget.signerName.isNotEmpty ? widget.signerName : 'Niraj Vekariya',
-    );
+    _photoPath = widget.initialPhotoPath;
   }
 
   @override
   void didUpdateWidget(covariant SignaturePadWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.initialPoints != oldWidget.initialPoints) {
-      setState(() {
-        _points = List.from(widget.initialPoints);
-      });
+      _points = List.from(widget.initialPoints);
     }
-    if (widget.signerName != oldWidget.signerName && widget.signerName.isNotEmpty) {
-      _typeController.text = widget.signerName;
+    if (widget.initialPhotoPath != oldWidget.initialPhotoPath) {
+      _photoPath = widget.initialPhotoPath;
     }
   }
 
-  @override
-  void dispose() {
-    _typeController.dispose();
-    super.dispose();
-  }
+  bool get _hasDrawnSignature => _points.any((p) => p != null);
 
-  bool get _hasSignature => _points.any((p) => p != null);
+  bool get _hasSignature => _photoPath != null || _hasDrawnSignature;
 
   void _clearSignature() {
     setState(() {
       _points.clear();
+      _photoPath = null;
     });
     widget.onSignatureChanged([]);
+    widget.onPhotoChanged?.call(null);
     widget.onCleared?.call();
   }
 
-  /// Generates a realistic cursive sample signature with smooth stroke curves
-  List<Offset?> _buildSampleSignaturePoints() {
-    final List<Offset?> sample = [];
-    const double startX = 35.0;
-    const double startY = 60.0;
-
-    // Initial capital swoop flourish
-    for (double t = 0; t <= 1.0; t += 0.05) {
-      final x = startX + 30 * t;
-      final y = startY - 30 * (1 - (2 * t - 1) * (2 * t - 1));
-      sample.add(Offset(x, y));
-    }
-    sample.add(null);
-
-    // Downward energetic stroke
-    sample.add(const Offset(startX + 14, startY - 30));
-    sample.add(const Offset(startX + 18, startY + 24));
-    sample.add(null);
-
-    // Flowing cursive waves
-    double cx = startX + 34;
-    for (int i = 0; i < 4; i++) {
-      sample.add(Offset(cx, startY + 4));
-      sample.add(Offset(cx + 9, startY - 15));
-      sample.add(Offset(cx + 18, startY + 8));
-      sample.add(Offset(cx + 26, startY - 4));
-      cx += 28;
-    }
-
-    // Baseline underline flourish
-    sample.add(null);
-    sample.add(Offset(startX + 10, startY + 28));
-    sample.add(Offset(startX + 165, startY + 26));
-
-    return sample;
-  }
-
-  void _simulateMobileSignatureReceive() {
-    final sample = _buildSampleSignaturePoints();
-    setState(() {
-      _points = sample;
-    });
-    widget.onSignatureChanged(List.unmodifiable(_points));
-  }
-
-
-  void _applyTypedSignature() {
-    final sample = _buildSampleSignaturePoints();
-    setState(() {
-      _points = sample;
-    });
-    widget.onSignatureChanged(List.unmodifiable(_points));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 16),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Signature confirmed for ${_typeController.text}',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 12),
-              ),
-            ),
-          ],
+  Future<void> _captureSignaturePhoto() async {
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear,
+        maxWidth: 1600,
+        maxHeight: 900,
+        imageQuality: 90,
+      );
+      if (file == null) return;
+      setState(() {
+        _photoPath = file.path;
+        _points.clear();
+      });
+      widget.onSignatureChanged(const []);
+      widget.onPhotoChanged?.call(file.path);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open camera: $e'),
+          backgroundColor: const Color(0xFFDC2626),
         ),
-        backgroundColor: const Color(0xFF059669),
-        duration: const Duration(seconds: 2),
-      ),
-    );
+      );
+    }
   }
 
   @override
@@ -220,15 +162,24 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
                         ),
                         const SizedBox(width: 8),
                         Expanded(
-                          child: Text(
-                            widget.title ?? 'Main Guest Signature',
+                          child: Text.rich(
+                            TextSpan(
+                              text: widget.title ?? 'Main Guest Signature',
+                              style: GoogleFonts.inter(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF0F172A),
+                              ),
+                              children: [
+                                if (widget.isRequired)
+                                  const TextSpan(
+                                    text: ' *',
+                                    style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w700),
+                                  ),
+                              ],
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF0F172A),
-                            ),
                           ),
                         ),
                       ],
@@ -289,16 +240,25 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                widget.title ?? 'Main Guest Signature',
+                              Text.rich(
+                                TextSpan(
+                                  text: widget.title ?? 'Main Guest Signature',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF0F172A),
+                                    letterSpacing: -0.2,
+                                  ),
+                                  children: [
+                                    if (widget.isRequired)
+                                      const TextSpan(
+                                        text: ' *',
+                                        style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w700),
+                                      ),
+                                  ],
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF0F172A),
-                                  letterSpacing: -0.2,
-                                ),
                               ),
                               const SizedBox(height: 1),
                               Text(
@@ -338,28 +298,19 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
               children: [
                 Expanded(
                   child: _buildSegmentTab(
-                    mode: SignatureMode.screenDraw,
-                    icon: Icons.gesture_rounded,
-                    label: 'Screen Draw',
-                    sublabel: 'Touch',
+                    mode: SignatureMode.camera,
+                    icon: Icons.photo_camera_rounded,
+                    label: 'Camera',
+                    sublabel: 'Photo',
                   ),
                 ),
                 const SizedBox(width: 4),
                 Expanded(
                   child: _buildSegmentTab(
-                    mode: SignatureMode.phoneQr,
-                    icon: Icons.qr_code_2_rounded,
-                    label: 'Phone QR',
-                    sublabel: 'Mobile',
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: _buildSegmentTab(
-                    mode: SignatureMode.type,
-                    icon: Icons.text_fields_rounded,
-                    label: 'Type Name',
-                    sublabel: 'Type',
+                    mode: SignatureMode.pad,
+                    icon: Icons.draw_rounded,
+                    label: 'Digital Pad',
+                    sublabel: 'Draw',
                   ),
                 ),
               ],
@@ -386,49 +337,10 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
                     : const Color(0xFFF8FAFC),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: _buildActiveModeContent(hasSig, displayName),
+              child: _buildActiveModeContent(),
             ),
           ),
 
-          // Clear button in footer when signature exists and not in screenDraw mode (screenDraw has its own integrated clear button)
-          if (hasSig && _activeMode != SignatureMode.screenDraw) ...[
-            const SizedBox(height: 6),
-            Align(
-              alignment: Alignment.centerRight,
-              child: InkWell(
-                key: const ValueKey('signature_clear_btn'),
-                onTap: _clearSignature,
-                borderRadius: BorderRadius.circular(6),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFFECACA), width: 0.8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.refresh_rounded,
-                        size: 12,
-                        color: Color(0xFFEF4444),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        'Clear',
-                        style: GoogleFonts.inter(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFFDC2626),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -546,14 +458,12 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
     );
   }
 
-  Widget _buildActiveModeContent(bool hasSig, String displayName) {
+  Widget _buildActiveModeContent() {
     switch (_activeMode) {
-      case SignatureMode.screenDraw:
-        return _buildScreenDrawContent(hasSig);
-      case SignatureMode.phoneQr:
-        return _buildPhoneQrContent(hasSig, displayName);
-      case SignatureMode.type:
-        return _buildTypeContent(hasSig, displayName);
+      case SignatureMode.camera:
+        return _buildCameraContent();
+      case SignatureMode.pad:
+        return _buildScreenDrawContent(_hasDrawnSignature);
     }
   }
 
@@ -573,8 +483,10 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
     if (result != null) {
       setState(() {
         _points = List.from(result);
+        _photoPath = null;
       });
-      widget.onSignatureChanged(List.unmodifiable(_points));
+      widget.onPhotoChanged?.call(null);
+      widget.onSignatureChanged(List<Offset?>.from(_points));
     }
   }
 
@@ -675,80 +587,26 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
                       ),
                     ),
 
-                  // CustomPaint for drawing signature (auto-fits when hasSig)
                   CustomPaint(
                     painter: _SignaturePainter(points: _points, fitToSize: hasSig),
                     size: Size.infinite,
                   ),
 
-                  // Direct Touch Pan Recognizer: only active when empty to avoid blocking page scroll
-                  if (!hasSig)
-                    RawGestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      gestures: {
-                        _EagerPanGestureRecognizer:
-                            GestureRecognizerFactoryWithHandlers<_EagerPanGestureRecognizer>(
-                          () => _EagerPanGestureRecognizer(),
-                          (_EagerPanGestureRecognizer instance) {
-                            instance.onStart = (details) {
-                              setState(() {
-                                _points.add(details.localPosition);
-                              });
-                            };
-                            instance.onUpdate = (details) {
-                              setState(() {
-                                _points.add(details.localPosition);
-                              });
-                            };
-                            instance.onEnd = (details) {
-                              setState(() {
-                                _points.add(null);
-                              });
-                              widget.onSignatureChanged(List.unmodifiable(_points));
-                            };
-                            instance.onCancel = () {
-                              setState(() {
-                                _points.add(null);
-                              });
-                              widget.onSignatureChanged(List.unmodifiable(_points));
-                            };
-                          },
-                        ),
-                      },
-                    ),
-
-                  // Touch & Drag Watermark + "Add Signature" button when empty
                   if (!hasSig)
                     Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          ElevatedButton.icon(
-                            key: const ValueKey('add_signature_btn'),
-                            onPressed: _openSignatureDialog,
-                            icon: const Icon(Icons.draw_rounded, size: 15),
-                            label: const Text('Add Signature'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0F766E),
-                              foregroundColor: Colors.white,
-                              elevation: 1,
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          IgnorePointer(
-                            child: Text(
-                              'Touch & drag finger here to sign',
-                              style: GoogleFonts.inter(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF64748B),
-                              ),
-                            ),
-                          ),
-                        ],
+                      child: ElevatedButton.icon(
+                        key: const ValueKey('add_signature_btn'),
+                        onPressed: _openSignatureDialog,
+                        icon: const Icon(Icons.draw_rounded, size: 15),
+                        label: const Text('Add Signature'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF0F766E),
+                          foregroundColor: Colors.white,
+                          elevation: 1,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                        ),
                       ),
                     ),
                 ],
@@ -757,89 +615,27 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
           ),
         ),
 
-        const SizedBox(height: 10),
-
-        // Action Toolbar below the canvas
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 6,
-          runSpacing: 6,
-          children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  hasSig ? Icons.check_circle_rounded : Icons.touch_app_rounded,
-                  size: 13,
-                  color: hasSig ? const Color(0xFF059669) : const Color(0xFF0D9488),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  hasSig ? 'Signature captured!' : 'Direct touch canvas',
+        if (hasSig) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF059669)),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  'Signature captured!',
                   style: GoogleFonts.inter(
                     fontSize: 10.5,
-                    color: hasSig ? const Color(0xFF059669) : const Color(0xFF475569),
+                    color: const Color(0xFF059669),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-              ],
-            ),
-
-            if (hasSig)
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  OutlinedButton.icon(
-                    key: const ValueKey('signature_edit_btn'),
-                    onPressed: () => _openSignatureDialog(clearFirst: true),
-                    icon: const Icon(Icons.edit_rounded, size: 12),
-                    label: const Text('Re-sign'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF0F766E),
-                      side: const BorderSide(color: Color(0xFF99F6E4)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      visualDensity: VisualDensity.compact,
-                      textStyle: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  InkWell(
-                    key: const ValueKey('signature_clear_btn'),
-                    onTap: _clearSignature,
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFEF2F2),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFFECACA)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.refresh_rounded, size: 12, color: Color(0xFFDC2626)),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Clear',
-                            style: GoogleFonts.inter(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFFB91C1C),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              )
-            else
+              ),
               OutlinedButton.icon(
-                key: const ValueKey('open_signature_popup_btn'),
-                onPressed: _openSignatureDialog,
-                icon: const Icon(Icons.open_in_new_rounded, size: 12),
-                label: const Text('Open Pad Pop-up'),
+                key: const ValueKey('signature_edit_btn'),
+                onPressed: () => _openSignatureDialog(clearFirst: true),
+                icon: const Icon(Icons.edit_rounded, size: 12),
+                label: const Text('Re-sign'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: const Color(0xFF0F766E),
                   side: const BorderSide(color: Color(0xFF99F6E4)),
@@ -848,468 +644,154 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
                   textStyle: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w700),
                 ),
               ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  /// ----------------- PHONE QR MODE -----------------
-  Widget _buildPhoneQrContent(bool hasSig, String displayName) {
-    if (hasSig) {
-      // SUCCESS RECEIVED STATE (Exact layout from website screenshot)
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Green Circular Checkmark
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: const Color(0xFF10B981),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.check_rounded,
-                color: Colors.white,
-                size: 28,
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-
-          // English Title
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              const Text('✅ ', style: TextStyle(fontSize: 14)),
-              Text(
-                'Signature Received from Mobile!',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.inter(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 3),
-
-          Text(
-            'Signature successfully received from mobile device.',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF059669),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Signature Preview Box
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 270),
-            child: Container(
-              height: 92,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFCBD5E1), width: 1.0),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Center(
-                  child: CustomPaint(
-                    painter: _SignaturePainter(points: _points),
-                    size: const Size(250, 80),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    // Pending phone scan state with stylized QR code
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Stylized QR Code Frame
-        Container(
-          width: 105,
-          height: 105,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.all(9),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildQrMarker(),
-                      _buildQrMarker(),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF10B981).withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.qr_code_2_rounded,
-                          size: 16,
-                          color: Color(0xFF059669),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _buildQrMarker(),
-                      Container(
-                        width: 18,
-                        height: 18,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF0F172A),
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                        child: const Center(
-                          child: Icon(Icons.phone_iphone_rounded, size: 11, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 10),
-
-        Text(
-          'Scan with Smartphone to Sign Remotely',
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF0F172A),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          'Scan this QR code with guest smartphone camera',
-          style: GoogleFonts.inter(
-            fontSize: 11.5,
-            fontWeight: FontWeight.w500,
-            color: const Color(0xFF047857),
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        // Quick simulation button
-        InkWell(
-          key: const ValueKey('signature_auto_sign_btn_qr'),
-          onTap: _simulateMobileSignatureReceive,
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF10B981), Color(0xFF059669)],
-              ),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.3),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.phone_android_rounded, size: 14, color: Colors.white),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: Text(
-                    'Simulate Receiving from Mobile',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildQrMarker() {
-    return Container(
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        border: Border.all(color: const Color(0xFF0F172A), width: 2.2),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Center(
-        child: Container(
-          width: 8,
-          height: 8,
-          color: const Color(0xFF0F172A),
-        ),
-      ),
-    );
-  }
-
-  /// ----------------- TYPE NAME MODE -----------------
-  Widget _buildTypeContent(bool hasSig, String displayName) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Name Label
-        Text(
-          'Guest Full Name:',
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF334155),
-          ),
-        ),
-        const SizedBox(height: 6),
-
-        // Text input field
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFCBD5E1)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-          child: Row(
-            children: [
-              const Icon(Icons.person_outline_rounded, size: 18, color: Color(0xFF0D9488)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: TextField(
-                  controller: _typeController,
-                  onChanged: (val) {
-                    setState(() {});
-                  },
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    isDense: true,
-                    hintText: 'Enter guest name',
-                  ),
-                  style: GoogleFonts.inter(
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF0F172A),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 10),
-
-        // Font Style Selector Chips (Uses Wrap to ensure 0 overflow on all screen sizes)
-        Wrap(
-          spacing: 6,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              'Font Style:',
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFF64748B),
-              ),
-            ),
-            ...List.generate(_fontStyleLabels.length, (index) {
-              final isSelected = _selectedFontStyleIndex == index;
-              return InkWell(
-                onTap: () {
-                  setState(() {
-                    _selectedFontStyleIndex = index;
-                  });
-                },
+              const SizedBox(width: 6),
+              InkWell(
+                key: const ValueKey('signature_clear_btn'),
+                onTap: _clearSignature,
                 borderRadius: BorderRadius.circular(6),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF0D9488) : const Color(0xFFF1F5F9),
+                    color: const Color(0xFFFEF2F2),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: isSelected ? const Color(0xFF0D9488) : const Color(0xFFE2E8F0),
-                      width: 1,
-                    ),
+                    border: Border.all(color: const Color(0xFFFECACA)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (isSelected) ...[
-                        const Icon(Icons.check, size: 10, color: Colors.white),
-                        const SizedBox(width: 3),
-                      ],
+                      const Icon(Icons.refresh_rounded, size: 12, color: Color(0xFFDC2626)),
+                      const SizedBox(width: 4),
                       Text(
-                        _fontStyleLabels[index],
+                        'Clear',
                         style: GoogleFonts.inter(
-                          fontSize: 10,
+                          fontSize: 10.5,
                           fontWeight: FontWeight.w700,
-                          color: isSelected ? Colors.white : const Color(0xFF475569),
+                          color: const Color(0xFFB91C1C),
                         ),
                       ),
                     ],
                   ),
                 ),
-              );
-            }),
-          ],
-        ),
-
-        const SizedBox(height: 10),
-
-        // Cursive live parchment preview card
-        Container(
-          width: double.infinity,
-          height: 85,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFCBD5E1)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
               ),
             ],
           ),
-          alignment: Alignment.center,
-          child: Text(
-            _typeController.text.trim().isNotEmpty
-                ? _typeController.text.trim()
-                : displayName,
-            textAlign: TextAlign.center,
-            style: _getCursiveTextStyle(_selectedFontStyleIndex),
-          ),
-        ),
-
-        const SizedBox(height: 10),
-
-        // Apply Button
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: _applyTypedSignature,
-            icon: const Icon(Icons.check_rounded, size: 16),
-            label: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                'Apply This Signature',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF10B981),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              elevation: 0,
-            ),
-          ),
-        ),
+        ],
       ],
     );
   }
 
-  TextStyle _getCursiveTextStyle(int index) {
-    switch (index) {
-      case 0:
-        return GoogleFonts.dancingScript(
-          fontSize: 32,
-          fontWeight: FontWeight.w700,
-          color: const Color(0xFF0F172A),
-        );
-      case 1:
-        return GoogleFonts.greatVibes(
-          fontSize: 34,
-          fontWeight: FontWeight.w600,
-          color: const Color(0xFF0F172A),
-        );
-      case 2:
-      default:
-        return GoogleFonts.caveat(
-          fontSize: 34,
-          fontWeight: FontWeight.w700,
-          color: const Color(0xFF0F172A),
-          fontStyle: FontStyle.italic,
-        );
+  Widget _signaturePhoto(String path) {
+    final remote = path.trim().toLowerCase().startsWith('http://') || path.trim().toLowerCase().startsWith('https://');
+    if (remote) {
+      return Image.network(
+        path,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: 140,
+        errorBuilder: (_, _, _) => const SizedBox(height: 140),
+      );
     }
+    return Image.file(
+      File(path),
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: 140,
+      errorBuilder: (_, _, _) => const SizedBox(height: 140),
+    );
+  }
+
+  Widget _buildCameraContent() {
+    final hasPhoto = _photoPath != null;
+    return Column(
+      children: [
+        Container(
+          height: 140,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: hasPhoto ? const Color(0xFF10B981) : const Color(0xFFCBD5E1),
+              width: 1.2,
+            ),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: hasPhoto
+                ? _signaturePhoto(_photoPath!)
+                : Center(
+                    child: ElevatedButton.icon(
+                      key: const ValueKey('capture_signature_camera_btn'),
+                      onPressed: _captureSignaturePhoto,
+                      icon: const Icon(Icons.photo_camera_rounded, size: 16),
+                      label: const Text('Capture from Camera'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0F766E),
+                        foregroundColor: Colors.white,
+                        elevation: 1,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        textStyle: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+        if (hasPhoto) ...[
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF059669)),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  'Signature photo captured!',
+                  style: GoogleFonts.inter(
+                    fontSize: 10.5,
+                    color: const Color(0xFF059669),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              OutlinedButton.icon(
+                onPressed: _captureSignaturePhoto,
+                icon: const Icon(Icons.photo_camera_rounded, size: 12),
+                label: const Text('Retake'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF0F766E),
+                  side: const BorderSide(color: Color(0xFF99F6E4)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  visualDensity: VisualDensity.compact,
+                  textStyle: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                key: const ValueKey('signature_photo_clear_btn'),
+                onTap: _clearSignature,
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFFECACA)),
+                  ),
+                  child: Text(
+                    'Clear',
+                    style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFFB91C1C),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
   }
 }
 

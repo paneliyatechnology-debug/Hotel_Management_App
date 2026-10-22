@@ -5,11 +5,13 @@ import '../constants/app_colors.dart';
 class ModernBottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final bool isAdmin;
 
   const ModernBottomNavBar({
     super.key,
     required this.currentIndex,
     required this.onTap,
+    this.isAdmin = false,
   });
 
   @override
@@ -31,48 +33,91 @@ class ModernBottomNavBar extends StatelessWidget {
           height: 64,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Row(
-            children: [
-              Expanded(
-                child: _buildNavItem(
-                  index: 0,
-                  icon: Icons.dashboard_rounded,
-                  outlinedIcon: Icons.dashboard_outlined,
-                  label: 'Front Desk',
-                ),
-              ),
-              Expanded(
-                child: _buildNavItem(
-                  index: 1,
-                  icon: Icons.meeting_room_rounded,
-                  outlinedIcon: Icons.meeting_room_outlined,
-                  label: 'Rooms',
-                ),
-              ),
-              Expanded(
-                child: _buildNavItem(
-                  index: 2,
-                  icon: Icons.people_alt_rounded,
-                  outlinedIcon: Icons.people_alt_outlined,
-                  label: 'In-House',
-                ),
-              ),
-              Expanded(
-                child: _buildNavItem(
-                  index: 3,
-                  icon: Icons.badge_rounded,
-                  outlinedIcon: Icons.badge_outlined,
-                  label: 'Guests',
-                ),
-              ),
-              Expanded(
-                child: _buildNavItem(
-                  index: 4,
-                  icon: Icons.apps_rounded,
-                  outlinedIcon: Icons.apps_outlined,
-                  label: 'More',
-                ),
-              ),
-            ],
+            children: isAdmin
+                ? [
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 0,
+                        icon: Icons.dashboard_rounded,
+                        outlinedIcon: Icons.dashboard_outlined,
+                        label: 'Dashboard',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 1,
+                        icon: Icons.king_bed_rounded,
+                        outlinedIcon: Icons.king_bed_outlined,
+                        label: 'Rooms',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 2,
+                        icon: Icons.people_alt_rounded,
+                        outlinedIcon: Icons.people_alt_outlined,
+                        label: 'Guests',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 3,
+                        icon: Icons.badge_rounded,
+                        outlinedIcon: Icons.badge_outlined,
+                        label: 'Staff',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 4,
+                        icon: Icons.apps_rounded,
+                        outlinedIcon: Icons.apps_outlined,
+                        label: 'More',
+                      ),
+                    ),
+                  ]
+                : [
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 0,
+                        icon: Icons.dashboard_rounded,
+                        outlinedIcon: Icons.dashboard_outlined,
+                        label: 'Front Desk',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 1,
+                        icon: Icons.meeting_room_rounded,
+                        outlinedIcon: Icons.meeting_room_outlined,
+                        label: 'Rooms',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 2,
+                        icon: Icons.people_alt_rounded,
+                        outlinedIcon: Icons.people_alt_outlined,
+                        label: 'In-House',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 3,
+                        icon: Icons.badge_rounded,
+                        outlinedIcon: Icons.badge_outlined,
+                        label: 'Guests',
+                      ),
+                    ),
+                    Expanded(
+                      child: _buildNavItem(
+                        index: 4,
+                        icon: Icons.apps_rounded,
+                        outlinedIcon: Icons.apps_outlined,
+                        label: 'More',
+                      ),
+                    ),
+                  ],
           ),
         ),
       ),

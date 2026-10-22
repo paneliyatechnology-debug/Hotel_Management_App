@@ -1,9 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
+import '../../../../core/constants/api_constants.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../rooms/data/models/room_model.dart';
+import '../../data/models/booking_list_query.dart';
+import '../../data/models/booking_pdf_file.dart';
 import '../../data/models/guest_folio_model.dart';
 import '../../data/models/hotel_stats_model.dart';
 import '../../../check_in_wizard/data/models/check_in_form_data.dart';
@@ -16,23 +23,39 @@ abstract class IDashboardRepository {
   Future<List<RoomModel>> getRooms();
   Future<List<RoomTypeModel>> getRoomTypes();
   Future<List<GuestFolioModel>> getFolios({
-    String status = 'CHECKED_IN',
+    String status = '',
     String search = '',
     int page = 1,
-    int limit = 20,
+    int limit = 10,
+    BookingListQuery? query,
   });
   Future<HotelStatsModel> getStats();
   Future<HotelStatsModel> fetchReceptionistDashboard();
   Future<List<RoomModel>> fetchAvailableRooms();
-  Future<List<RoomTypeModel>> fetchRoomTypes();
+  Future<List<RoomTypeModel>> fetchRoomTypes({String? hotelId});
   Future<List<GuestFolioModel>> fetchBookings({
-    String status = 'CHECKED_IN',
+    String status = '',
     String search = '',
+    String paymentStatus = '',
+    String roomId = '',
+    String bookingNumber = '',
+    String primaryGuestName = '',
+    String guestName = '',
+    String mobileNumber = '',
+    String checkInFrom = '',
+    String checkInTo = '',
+    String checkOutFrom = '',
+    String checkOutTo = '',
     int page = 1,
-    int limit = 20,
+    int limit = 10,
+    BookingListQuery? query,
   });
   Future<void> updateRoomStatus(String roomId, RoomStatus newStatus);
+  void acceptRemoteRoomStatuses();
   Future<GuestFolioModel> completeCheckIn(CheckInFormData formData);
+  Future<GuestFolioModel> updateBookingFromForm(CheckInFormData formData);
+  Future<GuestFolioModel?> fetchBooking(String bookingId);
+  ({List<RoomModel> rooms, List<GuestFolioModel> folios}) applyLiveBooking(Map<String, dynamic> json);
   Future<Map<String, dynamic>> checkoutFolio(String folioId, {Map<String, dynamic>? customPayload});
   Future<void> extendFolioStay(String folioId, DateTime newCheckoutDate);
   Future<void> addFolioPayment(String folioId, PaymentRecordModel payment);
@@ -41,12 +64,11 @@ abstract class IDashboardRepository {
 }
 
 class DashboardRepository implements IDashboardRepository {
-  static const String baseUrl =
-      'https://hotelmanagementbackend-dev.up.railway.app/api/v1/receptionist';
-  static const String dashboardEndpoint = '$baseUrl/dashboard';
-  static const String availableRoomsEndpoint = '$baseUrl/rooms/available';
-  static const String roomTypesEndpoint = '$baseUrl/room-types';
-  static const String bookingsEndpoint = '$baseUrl/bookings';
+  static const String baseUrl = ApiConstants.receptionistBaseUrl;
+  static const String dashboardEndpoint = ApiConstants.receptionistDashboardUrl;
+  static const String availableRoomsEndpoint = ApiConstants.receptionistAvailableRoomsUrl;
+  static const String roomTypesEndpoint = ApiConstants.receptionistRoomTypesUrl;
+  static const String bookingsEndpoint = ApiConstants.receptionistBookingsUrl;
 
   static DashboardRepository? _instance;
   final http.Client _client;
@@ -79,10 +101,12 @@ class DashboardRepository implements IDashboardRepository {
     List<GuestFolioModel>? initialFolios,
     List<RoomTypeModel>? initialRoomTypes,
   })  : _isCustomClient = client != null,
-        _rooms = initialRooms != null ? List.from(initialRooms) : _buildInitialRooms(),
+        _rooms = initialRooms != null
+            ? List<RoomModel>.from(initialRooms)
+            : (_isTestEnv ? _buildInitialRooms() : <RoomModel>[]),
         _folios = initialFolios != null
-            ? List.from(initialFolios)
-            : _buildInitialFolios(),
+            ? List<GuestFolioModel>.from(initialFolios)
+            : (_isTestEnv ? _buildInitialFolios() : <GuestFolioModel>[]),
         _roomTypes = initialRoomTypes != null ? List.from(initialRoomTypes) : [],
         _client = client ??
             AuthenticatedHttpClient(
@@ -105,6 +129,9 @@ class DashboardRepository implements IDashboardRepository {
   List<RoomModel> _rooms = [];
   List<GuestFolioModel> _folios = [];
   List<RoomTypeModel> _roomTypes = [];
+  BookingListQuery _guestListQuery = const BookingListQuery();
+  final Set<String> _keepAvailableRoomIds = {};
+  Future<GuestFolioModel>? _activeCheckIn;
 
   @override
   Future<HotelStatsModel> fetchReceptionistDashboard() async {
@@ -141,74 +168,103 @@ class DashboardRepository implements IDashboardRepository {
   @override
   Future<List<RoomModel>> fetchAvailableRooms() async {
     if (_shouldSkipLiveNetwork) {
-      return List.unmodifiable(_rooms);
+      return List.unmodifiable(List<RoomModel>.from(_rooms));
     }
     try {
-      final response = await _client
-          .get(
-            Uri.parse(availableRoomsEndpoint),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
-          )
-          .timeout(const Duration(seconds: 8));
+      final rooms = <RoomModel>[];
+      var page = 1;
+      var totalPages = 1;
+      Map<String, dynamic>? hotelGst;
+      while (page <= totalPages && page <= 50) {
+        final uri = Uri.parse(ApiConstants.roomsUrl).replace(
+          queryParameters: {
+            'page': '$page',
+            'limit': '10',
+            'sort_by': 'floor',
+            'sort_order': 'asc',
+          },
+        );
+        final response = await _client
+            .get(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+            )
+            .timeout(const Duration(seconds: 8));
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final jsonResponse = jsonDecode(response.body) as Map<String, dynamic>;
-        if (jsonResponse['success'] == true && jsonResponse['data'] is List) {
-          final apiRooms = (jsonResponse['data'] as List)
-              .map((e) => RoomModel.fromJson(e as Map<String, dynamic>))
-              .toList();
-          if (apiRooms.isNotEmpty) {
-            final updatedList = <RoomModel>[];
-            for (final apiRoom in apiRooms) {
-              final existingIndex = _rooms.indexWhere((r) =>
-                  r.id == apiRoom.id ||
-                  (r.roomNumber == apiRoom.roomNumber && r.floor == apiRoom.floor));
-              if (existingIndex != -1 && _rooms[existingIndex].status != RoomStatus.available) {
-                updatedList.add(_rooms[existingIndex]);
-              } else {
-                updatedList.add(apiRoom);
-              }
-            }
-            _rooms = updatedList;
-            return List.unmodifiable(_rooms);
+        if (response.statusCode < 200 || response.statusCode >= 300) break;
+        final jsonResponse = jsonDecode(response.body);
+        if (jsonResponse is! Map<String, dynamic> || jsonResponse['success'] != true) {
+          break;
+        }
+
+        final data = jsonResponse['data'];
+        final List<dynamic> list;
+        if (data is List) {
+          list = data;
+          totalPages = page;
+        } else if (data is Map) {
+          final map = Map<String, dynamic>.from(data);
+          list = map['rooms'] as List<dynamic>? ?? const <dynamic>[];
+          totalPages = (map['totalPages'] as num?)?.toInt() ??
+              (map['total_pages'] as num?)?.toInt() ??
+              page;
+          hotelGst = map['hotel'] is Map ? Map<String, dynamic>.from(map['hotel'] as Map) : hotelGst;
+        } else {
+          break;
+        }
+
+        for (final item in list) {
+          if (item is! Map) continue;
+          final json = Map<String, dynamic>.from(item);
+          if (json['deleted_at'] != null) continue;
+          final apiRoom = RoomModel.fromJson(json).withHotelGst(hotelGst);
+          final existingIndex = _rooms.indexWhere((room) =>
+              room.id == apiRoom.id ||
+              (room.roomNumber == apiRoom.roomNumber && room.floor == apiRoom.floor));
+          final local = existingIndex == -1 ? null : _rooms[existingIndex];
+          if (_isKeptAvailable(apiRoom) || (local != null && _isKeptAvailable(local))) {
+            final availableRoom = apiRoom.copyWith(status: RoomStatus.available);
+            _pinAvailable(availableRoom);
+            if (local != null) _pinAvailable(local);
+            rooms.add(availableRoom);
+          } else {
+            rooms.add(apiRoom);
           }
         }
+        if (list.isEmpty) break;
+        page++;
+      }
+      if (rooms.isNotEmpty) {
+        _rooms = rooms;
       }
     } catch (_) {
       // Fallback to local rooms on network failure
     }
-    return List.unmodifiable(_rooms);
+    _attachCheckedInGuests();
+    return List.unmodifiable(List<RoomModel>.from(_rooms));
   }
 
   @override
-  Future<List<RoomTypeModel>> fetchRoomTypes() async {
+  Future<List<RoomTypeModel>> fetchRoomTypes({String? hotelId}) async {
     if (_shouldSkipLiveNetwork) {
       return List.unmodifiable(_roomTypes);
     }
     try {
       final response = await _client
           .get(
-            Uri.parse(roomTypesEndpoint),
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-            },
+            Uri.parse(ApiConstants.roomTypesUrl),
+            headers: const {'Accept': 'application/json'},
           )
           .timeout(const Duration(seconds: 8));
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        final jsonResponse = jsonDecode(response.body) as Map<String, dynamic>;
-        if (jsonResponse['success'] == true && jsonResponse['data'] is List) {
-          final apiTypes = (jsonResponse['data'] as List)
-              .map((e) => RoomTypeModel.fromJson(e as Map<String, dynamic>))
-              .toList();
-          if (apiTypes.isNotEmpty) {
-            _roomTypes = apiTypes;
-            return List.unmodifiable(_roomTypes);
-          }
+        final jsonResponse = jsonDecode(response.body);
+        if (jsonResponse is Map<String, dynamic> && jsonResponse['success'] == true) {
+          _roomTypes = RoomTypeModel.listFromResponse(jsonResponse);
+          return List.unmodifiable(_roomTypes);
         }
       }
     } catch (_) {
@@ -219,59 +275,144 @@ class DashboardRepository implements IDashboardRepository {
 
   @override
   Future<List<GuestFolioModel>> fetchBookings({
-    String status = 'CHECKED_IN',
+    String status = '',
     String search = '',
+    String paymentStatus = '',
+    String roomId = '',
+    String bookingNumber = '',
+    String primaryGuestName = '',
+    String guestName = '',
+    String mobileNumber = '',
+    String checkInFrom = '',
+    String checkInTo = '',
+    String checkOutFrom = '',
+    String checkOutTo = '',
     int page = 1,
-    int limit = 20,
+    int limit = 10,
+    BookingListQuery? query,
   }) async {
+    final active = query ??
+        BookingListQuery(
+          bookingStatus: status,
+          paymentStatus: paymentStatus,
+          roomId: roomId,
+          bookingNumber: bookingNumber,
+          primaryGuestName: primaryGuestName,
+          guestName: guestName,
+          mobileNumber: mobileNumber,
+          search: search,
+          checkInFrom: checkInFrom,
+          checkInTo: checkInTo,
+          checkOutFrom: checkOutFrom,
+          checkOutTo: checkOutTo,
+          page: page,
+          limit: limit,
+        );
+    _guestListQuery = active;
     if (_shouldSkipLiveNetwork) {
-      return List.unmodifiable(_folios);
+      return List.unmodifiable(List<GuestFolioModel>.from(_folios));
     }
     try {
-      final queryParams = <String, String>{
-        if (status.isNotEmpty) 'status': status,
-        if (search.isNotEmpty) 'search': search,
-        'page': page.toString(),
-        'limit': limit.toString(),
-      };
-      final uri = Uri.parse(bookingsEndpoint).replace(queryParameters: queryParams);
+      final pageNumber = active.page < 1 ? 1 : active.page;
+      final uri = Uri.parse(ApiConstants.bookingsUrl).replace(
+        queryParameters: active.toQueryParameters(pageNumber),
+      );
       final response = await _client
           .get(
             uri,
-            headers: {
-              'Content-Type': 'application/json',
+            headers: const {
               'Accept': 'application/json',
             },
           )
           .timeout(const Duration(seconds: 8));
 
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        final jsonResponse = jsonDecode(response.body) as Map<String, dynamic>;
-        List? bookingsList;
-        if (jsonResponse['data'] is List) {
-          bookingsList = jsonResponse['data'] as List;
-        } else if (jsonResponse['data'] is Map &&
-            (jsonResponse['data'] as Map)['bookings'] is List) {
-          bookingsList = (jsonResponse['data'] as Map)['bookings'] as List;
-        } else if (jsonResponse['bookings'] is List) {
-          bookingsList = jsonResponse['bookings'] as List;
-        }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(_readApiError(response.body, response.statusCode));
+      }
 
-        if (bookingsList != null && bookingsList.isNotEmpty) {
-          final apiBookings = bookingsList
-              .map((e) => GuestFolioModel.fromJson(e as Map<String, dynamic>))
-              .toList();
-          _folios = List.from(apiBookings);
-          return List.unmodifiable(_folios);
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) {
+        _folios = <GuestFolioModel>[];
+        return List.unmodifiable(_folios);
+      }
+      final jsonResponse = Map<String, dynamic>.from(decoded);
+      final rows = _bookingRows(jsonResponse);
+      final seen = <String>{};
+      final collected = <GuestFolioModel>[];
+      for (final row in rows) {
+        if (row is! Map) continue;
+        final booking = Map<String, dynamic>.from(row);
+        if (!_matchesRequestedBookingStatus(booking, active.bookingStatus)) continue;
+        final folio = GuestFolioModel.fromJson(booking);
+        if (folio.id.isEmpty || !seen.add(folio.id)) continue;
+        collected.add(folio);
+      }
+
+      _folios = collected;
+      _attachCheckedInGuests();
+      return List.unmodifiable(List<GuestFolioModel>.from(_folios));
+    } catch (_) {
+      _folios = <GuestFolioModel>[];
+      return List.unmodifiable(_folios);
+    }
+  }
+
+  List<dynamic> _bookingRows(Map<String, dynamic> jsonResponse) {
+    final data = jsonResponse['data'];
+    if (data is List) return data;
+    if (data is Map && data['bookings'] is List) {
+      return data['bookings'] as List;
+    }
+    if (jsonResponse['bookings'] is List) {
+      return jsonResponse['bookings'] as List;
+    }
+    return const [];
+  }
+
+  void _attachCheckedInGuests() {
+    if (_rooms.isEmpty || _folios.isEmpty) return;
+    final updated = List<RoomModel>.from(_rooms);
+    var changed = false;
+    for (var i = 0; i < updated.length; i++) {
+      final roomDigits = updated[i].roomNumber.replaceAll(RegExp(r'[^0-9]'), '');
+      GuestFolioModel? match;
+      for (final folio in _folios) {
+        if (folio.status != FolioStatus.inHouse) continue;
+        final folioDigits = folio.assignedRoom.replaceAll(RegExp(r'[^0-9]'), '');
+        if (roomDigits.isNotEmpty && roomDigits == folioDigits) {
+          match = folio;
+          break;
         }
       }
-    } catch (_) {
-      // Fallback to local folios on network failure
+      if (match == null) continue;
+      if (_isKeptAvailable(updated[i])) {
+        if (updated[i].status != RoomStatus.available) {
+          updated[i] = updated[i].copyWith(status: RoomStatus.available);
+          changed = true;
+        }
+        continue;
+      }
+      final name = match.guestName.trim();
+      if (name.isEmpty || name == 'Guest') continue;
+      updated[i] = updated[i].copyWith(
+        currentGuestName: name,
+        currentGuestFolioId: match.id,
+        status: updated[i].status == RoomStatus.available ? RoomStatus.occupied : updated[i].status,
+      );
+      changed = true;
     }
-    if (_folios.isEmpty) {
-      _folios = _buildInitialFolios();
+    if (changed) _rooms = updated;
+  }
+
+  bool _matchesRequestedBookingStatus(Map<String, dynamic> booking, String status) {
+    final requested = status.trim().toUpperCase();
+    if (requested.isEmpty) return true;
+    final raw = (booking['booking_status'] ?? booking['status'] ?? '').toString().trim().toUpperCase();
+    if (raw.isEmpty) return true;
+    if (requested == 'CHECKED_IN') {
+      return raw == 'CHECKED_IN' || raw == 'IN_HOUSE' || raw == 'INHOUSE';
     }
-    return List.unmodifiable(_folios);
+    return raw == requested;
   }
 
   HotelStatsModel _computeLocalStats() {
@@ -321,12 +462,17 @@ class DashboardRepository implements IDashboardRepository {
 
   @override
   Future<List<GuestFolioModel>> getFolios({
-    String status = 'CHECKED_IN',
+    String status = '',
     String search = '',
     int page = 1,
-    int limit = 20,
+    int limit = 10,
+    BookingListQuery? query,
   }) async {
-    return await fetchBookings(
+    if (query != null) return fetchBookings(query: query);
+    if (status.trim().isEmpty && search.trim().isEmpty && page == 1 && limit == 10) {
+      return fetchBookings(query: _guestListQuery);
+    }
+    return fetchBookings(
       status: status,
       search: search,
       page: page,
@@ -339,14 +485,393 @@ class DashboardRepository implements IDashboardRepository {
     return await fetchReceptionistDashboard();
   }
 
+  /// The seeded room inventory is a constant list. Replacing an entry in place
+  /// throws "Cannot modify an unmodifiable list", which is what Complete
+  /// Check-In was showing. Always write through a growable copy.
+  void _writeRoom(int index, RoomModel room) {
+    final rooms = List<RoomModel>.from(_rooms);
+    rooms[index] = room;
+    _rooms = rooms;
+  }
+
+  @override
+  void acceptRemoteRoomStatuses() {
+    _keepAvailableRoomIds.clear();
+  }
+
   @override
   Future<void> updateRoomStatus(String roomId, RoomStatus newStatus) async {
+    if (!_shouldSkipLiveNetwork) {
+      final response = await _client
+          .patch(
+            Uri.parse('${ApiConstants.roomsUrl}/$roomId/status'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'status': _statusApiValue(newStatus)}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        String message = 'Failed to update room status (${response.statusCode})';
+        try {
+          final err = jsonDecode(response.body) as Map<String, dynamic>;
+          message = (err['message'] ?? err['error'] ?? message).toString();
+        } catch (_) {}
+        throw Exception(message);
+      }
+
+      try {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final data = json['data'];
+        if (data is Map<String, dynamic>) {
+          final updated = RoomModel.fromJson(data).copyWith(status: newStatus);
+          final index = _rooms.indexWhere((room) => room.id == roomId || room.id == updated.id);
+          _rememberRequestedStatus(roomId, updated.id, newStatus);
+          if (index != -1) {
+            _writeRoom(index, updated);
+            return;
+          }
+        }
+      } catch (_) {}
+    }
+
     final index = _rooms.indexWhere((r) => r.id == roomId);
+    _rememberRequestedStatus(roomId, index == -1 ? null : _rooms[index].id, newStatus);
     if (index != -1) {
-      _rooms[index] = _rooms[index].copyWith(
-        status: newStatus,
-        currentGuestName: newStatus == RoomStatus.available ? null : _rooms[index].currentGuestName,
+      _writeRoom(
+        index,
+        _rooms[index].copyWith(
+          status: newStatus,
+          currentGuestName: newStatus == RoomStatus.available ? null : _rooms[index].currentGuestName,
+        ),
       );
+    }
+  }
+
+  void _rememberRequestedStatus(String requestedId, String? responseId, RoomStatus status) {
+    final index = _rooms.indexWhere((room) => room.id == requestedId || room.id == responseId);
+    final room = index == -1 ? null : _rooms[index];
+    if (status == RoomStatus.available) {
+      _keepAvailableRoomIds.add(requestedId.trim());
+      if (responseId != null && responseId.trim().isNotEmpty) {
+        _keepAvailableRoomIds.add(responseId.trim());
+      }
+      if (room != null) _pinAvailable(room);
+    } else if (room != null) {
+      _releaseAvailablePin(room);
+    } else {
+      _keepAvailableRoomIds.remove(requestedId.trim());
+      if (responseId != null) _keepAvailableRoomIds.remove(responseId.trim());
+    }
+  }
+
+  bool _isKeptAvailable(RoomModel room) {
+    final numberKey = _roomNumberKey(room.roomNumber);
+    return _keepAvailableRoomIds.contains(room.id) ||
+        _keepAvailableRoomIds.contains(_roomNumberKey(room.id)) ||
+        (numberKey.isNotEmpty && _keepAvailableRoomIds.contains(numberKey));
+  }
+
+  void _pinAvailable(RoomModel room) {
+    if (room.id.trim().isNotEmpty) _keepAvailableRoomIds.add(room.id.trim());
+    final idKey = _roomNumberKey(room.id);
+    final numberKey = _roomNumberKey(room.roomNumber);
+    if (idKey.isNotEmpty) _keepAvailableRoomIds.add(idKey);
+    if (numberKey.isNotEmpty) _keepAvailableRoomIds.add(numberKey);
+  }
+
+  void _releaseAvailablePin(RoomModel room) {
+    _keepAvailableRoomIds.remove(room.id.trim());
+    _keepAvailableRoomIds.remove(_roomNumberKey(room.id));
+    _keepAvailableRoomIds.remove(_roomNumberKey(room.roomNumber));
+  }
+
+  String _roomNumberKey(String value) => value.replaceAll(RegExp(r'[^0-9]'), '');
+
+  String _statusApiValue(RoomStatus status) {
+    switch (status) {
+      case RoomStatus.occupied:
+        return 'OCCUPIED';
+      case RoomStatus.cleaning:
+        return 'CLEANING';
+      case RoomStatus.maintenance:
+        return 'MAINTENANCE';
+      case RoomStatus.available:
+        return 'AVAILABLE';
+    }
+  }
+
+  String _joinedAddress(CheckInFormData formData) {
+    final parts = <String>[
+      formData.residentialAddress.trim(),
+      if (formData.city.trim().isNotEmpty) formData.city.trim(),
+      if (formData.state.trim().isNotEmpty) formData.state.trim(),
+      if (formData.pincode.trim().isNotEmpty) formData.pincode.trim(),
+    ].where((part) => part.isNotEmpty);
+    return parts.join(', ');
+  }
+
+  String _bookingMobile(String phone) {
+    var digits = phone.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 10 && digits.startsWith('91')) {
+      digits = digits.substring(digits.length - 10);
+    }
+    return digits;
+  }
+
+  String _plainAmount(num value) {
+    if (value == value.roundToDouble()) return value.round().toString();
+    return value.toString();
+  }
+
+  String _roomIdFormValue(String raw) {
+    final id = int.tryParse(raw.trim());
+    if (id != null) return '[$id]';
+    if (raw.trim().isEmpty) return '[]';
+    return jsonEncode([raw.trim()]);
+  }
+
+  /// The bookings API expects room_id as the string `[14]`, using the numeric
+  /// room id rather than the room number.
+  String _bookingRoomId(CheckInFormData formData, String resolvedRoomId) {
+    for (final raw in [formData.selectedRoomId.trim(), resolvedRoomId.trim()]) {
+      final parsed = int.tryParse(raw);
+      if (parsed != null) return '[$parsed]';
+    }
+    final wantedNumber = formData.selectedRoomNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    if (wantedNumber.isNotEmpty) {
+      for (final room in _rooms) {
+        final roomNumber = room.roomNumber.replaceAll(RegExp(r'[^0-9]'), '');
+        if (roomNumber == wantedNumber) {
+          final parsed = int.tryParse(room.id);
+          if (parsed != null) return '[$parsed]';
+        }
+      }
+    }
+    final raw = formData.selectedRoomId.trim().isNotEmpty
+        ? formData.selectedRoomId.trim()
+        : resolvedRoomId.trim();
+    return _roomIdFormValue(raw);
+  }
+
+  MediaType _imageMediaType(String path, List<int> header) {
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.png')) return MediaType('image', 'png');
+    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return MediaType('image', 'jpeg');
+    if (lower.endsWith('.webp')) return MediaType('image', 'webp');
+    if (lower.endsWith('.gif')) return MediaType('image', 'gif');
+    if (lower.endsWith('.svg')) return MediaType('image', 'svg+xml');
+    if (lower.endsWith('.avif')) return MediaType('image', 'avif');
+    if (header.length >= 3 && header[0] == 0xFF && header[1] == 0xD8) {
+      return MediaType('image', 'jpeg');
+    }
+    if (header.length >= 8 &&
+        header[0] == 0x89 &&
+        header[1] == 0x50 &&
+        header[2] == 0x4E &&
+        header[3] == 0x47) {
+      return MediaType('image', 'png');
+    }
+    if (header.length >= 3 && header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46) {
+      return MediaType('image', 'gif');
+    }
+    return MediaType('image', 'jpeg');
+  }
+
+  String _imageFilename(String path, MediaType type) {
+    final uri = Uri.tryParse(path);
+    final rawName = uri != null && uri.pathSegments.isNotEmpty
+        ? uri.pathSegments.last
+        : path.split(RegExp(r'[/\\]')).last;
+    final name = rawName.trim();
+    if (name.contains('.')) return name;
+    final extension = type.subtype == 'jpeg' ? 'jpg' : type.subtype;
+    return 'id-photo.$extension';
+  }
+
+  String _checkInErrorText(Object error) {
+    var text = error.toString();
+    text = text.replaceFirst(RegExp(r'^(Exception|Error):\s*'), '');
+    text = text.replaceFirst(RegExp(r'^Unsupported operation:\s*'), '');
+    return text.trim().isEmpty ? 'Check-in failed' : text.trim();
+  }
+
+  String _readApiError(String body, int statusCode, {String fallback = 'Check-in failed'}) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map) {
+        final message = decoded['message'] ?? decoded['error'];
+        if (message is List) {
+          final lines = message.map((item) => item.toString()).where((item) => item.trim().isNotEmpty);
+          final joined = lines.join('\n');
+          if (joined.isNotEmpty) return joined;
+        } else if (message != null && message.toString().trim().isNotEmpty) {
+          return message.toString();
+        }
+      }
+    } catch (_) {}
+    return '$fallback ($statusCode)';
+  }
+
+  String _bookingTimestamp(DateTime value, {required int defaultHour}) {
+    final hasTime = value.hour != 0 || value.minute != 0 || value.second != 0;
+    final utc = hasTime
+        ? value.toUtc()
+        : DateTime.utc(value.year, value.month, value.day, defaultHour);
+    return utc.toIso8601String();
+  }
+
+  int _calendarNights(DateTime checkIn, DateTime checkOut) {
+    final start = DateTime.utc(checkIn.toUtc().year, checkIn.toUtc().month, checkIn.toUtc().day);
+    final end = DateTime.utc(checkOut.toUtc().year, checkOut.toUtc().month, checkOut.toUtc().day);
+    final diff = end.difference(start).inDays;
+    return diff <= 0 ? 1 : diff;
+  }
+
+  double _gstRateForRoom(String resolvedRoomId, String selectedRoomId) {
+    for (final room in _rooms) {
+      if (room.id == resolvedRoomId || room.id == selectedRoomId) {
+        if (!room.gstEnabled) return 0;
+        return room.gstRate;
+      }
+    }
+    return 18;
+  }
+
+  Future<List<int>?> _signaturePngBytes(List<Offset?> points) async {
+    if (!points.any((point) => point != null)) return null;
+    const width = 600.0;
+    const height = 220.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder, const Rect.fromLTWH(0, 0, width, height));
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, width, height),
+      Paint()..color = const Color(0xFFFFFFFF),
+    );
+    final paint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final path = Path();
+    var drawing = false;
+    for (final point in points) {
+      if (point == null) {
+        drawing = false;
+        continue;
+      }
+      if (!drawing) {
+        path.moveTo(point.dx, point.dy);
+        drawing = true;
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    canvas.drawPath(path, paint);
+    final image = await recorder.endRecording().toImage(width.toInt(), height.toInt());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (bytes == null) return null;
+    return Uint8List.fromList(
+      bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+    );
+  }
+
+  Future<void> _addSignatureFile(
+    http.MultipartRequest request, {
+    required String? photoPath,
+    required List<Offset?> points,
+    required String filename,
+  }) async {
+    final photo = photoPath?.trim() ?? '';
+    if (photo.contains('://')) {
+      if (await _addRemoteFile(request, photo, field: 'signatures')) return;
+    } else if (photo.isNotEmpty) {
+      try {
+        final file = File(photo);
+        if (await file.exists()) {
+          final header = await file.openRead(0, 16).fold<List<int>>(<int>[], (bytes, chunk) {
+            bytes.addAll(chunk);
+            return bytes;
+          });
+          final contentType = _imageMediaType(photo, header);
+          request.files.add(await http.MultipartFile.fromPath(
+            'signatures',
+            photo,
+            filename: _imageFilename(photo, contentType),
+            contentType: contentType,
+          ));
+          return;
+        }
+      } catch (_) {}
+    }
+    final signatureBytes = await _signaturePngBytes(points);
+    if (signatureBytes == null) return;
+    request.files.add(http.MultipartFile.fromBytes(
+      'signatures',
+      signatureBytes,
+      filename: filename,
+      contentType: MediaType('image', 'png'),
+    ));
+  }
+
+  Future<void> _addBookingImages(http.MultipartRequest request, CheckInFormData formData) async {
+    final imagePaths = <String>{
+      ...formData.idPhotos,
+      if (formData.idFrontPhotoUrl != null) formData.idFrontPhotoUrl!,
+      if (formData.idBackPhotoUrl != null) formData.idBackPhotoUrl!,
+    };
+    for (final path in imagePaths) {
+      await _addImagePart(request, path);
+    }
+  }
+
+  Future<void> _addImagePart(http.MultipartRequest request, String path) async {
+    final trimmed = path.trim();
+    if (trimmed.isEmpty) return;
+    if (trimmed.contains('://')) {
+      await _addRemoteFile(request, trimmed, field: 'images');
+      return;
+    }
+    try {
+      final file = File(trimmed);
+      if (!await file.exists()) return;
+      final header = await file.openRead(0, 16).fold<List<int>>(<int>[], (bytes, chunk) {
+        bytes.addAll(chunk);
+        return bytes;
+      });
+      final contentType = _imageMediaType(trimmed, header);
+      request.files.add(await http.MultipartFile.fromPath(
+        'images',
+        trimmed,
+        filename: _imageFilename(trimmed, contentType),
+        contentType: contentType,
+      ));
+    } catch (_) {}
+  }
+
+  Future<bool> _addRemoteFile(
+    http.MultipartRequest request,
+    String url, {
+    required String field,
+  }) async {
+    try {
+      final response = await _client.get(Uri.parse(url)).timeout(const Duration(seconds: 20));
+      if (response.statusCode < 200 || response.statusCode >= 300 || response.bodyBytes.isEmpty) {
+        return false;
+      }
+      final header = response.bodyBytes.take(16).toList();
+      final contentType = _imageMediaType(url, header);
+      request.files.add(http.MultipartFile.fromBytes(
+        field,
+        response.bodyBytes,
+        filename: _imageFilename(url, contentType),
+        contentType: contentType,
+      ));
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -394,90 +919,90 @@ class DashboardRepository implements IDashboardRepository {
   }
 
   @override
-  Future<GuestFolioModel> completeCheckIn(CheckInFormData formData) async {
+  Future<GuestFolioModel> completeCheckIn(CheckInFormData formData) {
+    final inFlight = _activeCheckIn;
+    if (inFlight != null) return inFlight;
+    final run = _sendCheckIn(formData);
+    late final Future<GuestFolioModel> tracked;
+    tracked = run.whenComplete(() {
+      if (identical(_activeCheckIn, tracked)) _activeCheckIn = null;
+    });
+    _activeCheckIn = tracked;
+    return tracked;
+  }
+
+  Future<GuestFolioModel> _sendCheckIn(CheckInFormData formData) async {
     final targetRoomId = _resolveRoomId(formData);
-    final cleanRoomNumber = formData.selectedRoomNumber
-        .replaceAll('#', '')
-        .replaceAll('Room', '')
-        .trim();
 
-    final now = DateTime.now();
-    final inTimeHour = formData.checkInDate.hour != 0 ? formData.checkInDate.hour : now.hour;
-    final inTimeMinute = formData.checkInDate.minute != 0 ? formData.checkInDate.minute : now.minute;
-    final checkInTimeStr = "${inTimeHour.toString().padLeft(2, '0')}:${inTimeMinute.toString().padLeft(2, '0')}";
+    final checkInDateStr = _bookingTimestamp(formData.checkInDate, defaultHour: 14);
+    final checkOutDateStr = _bookingTimestamp(formData.checkOutDate, defaultHour: 12);
 
-    final checkInDateStr = "${formData.checkInDate.year.toString().padLeft(4, '0')}-${formData.checkInDate.month.toString().padLeft(2, '0')}-${formData.checkInDate.day.toString().padLeft(2, '0')}";
-    final checkOutDateStr = "${formData.checkOutDate.year.toString().padLeft(4, '0')}-${formData.checkOutDate.month.toString().padLeft(2, '0')}-${formData.checkOutDate.day.toString().padLeft(2, '0')}";
+    final childCount = formData.accompanyingGuests
+        .where((guest) =>
+            guest.name.trim().isNotEmpty && guest.relationship.toLowerCase().contains('child'))
+        .length;
+    final adults = formData.numberOfGuests > childCount
+        ? formData.numberOfGuests - childCount
+        : (formData.numberOfGuests > 0 ? formData.numberOfGuests : 1);
+    final secondaryName = (formData.secondGuestName ?? '').trim().isNotEmpty
+        ? formData.secondGuestName!.trim()
+        : formData.accompanyingGuests
+            .map((guest) => guest.name.trim())
+            .firstWhere((name) => name.isNotEmpty, orElse: () => '');
 
-    String fullAddress = formData.residentialAddress.trim();
-    if (fullAddress.isEmpty && formData.city.trim().isNotEmpty) {
-      fullAddress = formData.city.trim();
-    } else if (formData.city.trim().isNotEmpty && !fullAddress.contains(formData.city.trim())) {
-      fullAddress = '$fullAddress, ${formData.city.trim()}';
-    }
-    if (fullAddress.isEmpty) fullAddress = "Ahmedabad";
-
-    final paymentMethodStr = _mapPaymentMethod(formData.paymentMode);
-    final advanceAmount = formData.advancePaid.round();
-    final totalAmount = formData.grandTotal > 0
-        ? formData.grandTotal.round()
-        : (formData.pricePerNight * formData.totalNights).round();
-
-    final accompanyingList = formData.accompanyingGuests
-        .where((g) => g.name.trim().isNotEmpty)
-        .map((g) => {
-              "name": g.name.trim(),
-              "relationship": g.relationship.trim().toUpperCase(),
-              "idType": _mapGovtIdType(g.idType),
-              "idNumber": g.idNumber.trim(),
-              "age": int.tryParse(g.age) ?? 25,
-            })
-        .toList();
-
-    final payload = <String, dynamic>{
-      "fullName": formData.guestFullName.trim().isNotEmpty ? formData.guestFullName.trim() : "Niraj Vekariya",
-      "mobileNumber": formData.contactPhone.trim().isNotEmpty ? formData.contactPhone.trim() : "08849218118",
-      "email": formData.email.trim().isNotEmpty ? formData.email.trim() : "nirajvekariya2209@gmail.com",
-      "address": fullAddress,
-      "govtIdType": _mapGovtIdType(formData.idType),
-      "govtIdNumber": formData.idNumber.trim().isNotEmpty ? formData.idNumber.trim() : "1234 5678 9123",
-      "accompanyingGuests": accompanyingList,
-      "adults": formData.numberOfGuests > 0 ? formData.numberOfGuests : 1,
-      "children": 0,
-      "checkInDate": checkInDateStr,
-      "checkInTime": checkInTimeStr,
-      "checkOutDate": checkOutDateStr,
-      "checkOutTime": "12:00",
-      "roomId": targetRoomId,
-      "roomIds": targetRoomId.isNotEmpty ? [targetRoomId] : [""],
-      "roomNumber": cleanRoomNumber.isNotEmpty ? cleanRoomNumber : "04",
-      "advancePaymentAmount": advanceAmount,
-      "advancePayment": advanceAmount,
-      "totalAmount": totalAmount,
-      "discountAmount": formData.discountAmount.round(),
-      "securityDepositAmount": 0,
-      "paymentMethod": paymentMethodStr,
-      "paymentNote": "$paymentMethodStr settlement at check-in",
-      "paymentReference": formData.transactionRef.trim(),
-      "transactionId": formData.transactionRef.trim(),
-      "reusePreviousId": true,
-      "isInstantCheckIn": true,
-      "isWalkIn": true,
-      "guestId": formData.guestId ?? "",
-    };
+    final roomIdField = _bookingRoomId(formData, targetRoomId);
+    final stayNights = _calendarNights(formData.checkInDate, formData.checkOutDate);
+    final gstRate = _gstRateForRoom(targetRoomId, formData.selectedRoomId);
+    final baseAmount = formData.pricePerNight * stayNights;
 
     if (!_shouldSkipLiveNetwork) {
       try {
-        final response = await _client
-            .post(
-              Uri.parse(bookingsEndpoint),
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-              },
-              body: jsonEncode(payload),
-            )
-            .timeout(const Duration(seconds: 15));
+        final request = http.MultipartRequest('POST', Uri.parse(ApiConstants.bookingsUrl));
+        request.headers['Accept'] = 'application/json';
+        request.fields.addAll({
+          'primary_guest_name': formData.guestFullName.trim(),
+          'secondary_guest_name': secondaryName,
+          'mobile_number': _bookingMobile(formData.contactPhone),
+          'email': formData.email.trim(),
+          'address': formData.residentialAddress.trim(),
+          'room_id': roomIdField,
+          'check_in_date': checkInDateStr,
+          'check_out_date': checkOutDateStr,
+          'adults': '$adults',
+          'children': '$childCount',
+          'base_amount': _plainAmount(baseAmount),
+          'discount_amount': _plainAmount(formData.discountAmount),
+          'extra_charges_total': _plainAmount(formData.extraBeds * 500),
+          'gst_rate': _plainAmount(gstRate),
+          'paid_amount': _plainAmount(formData.advancePaid),
+          'payment_method': _mapPaymentMethod(formData.paymentMode),
+          'notes': formData.transactionRef.trim().isNotEmpty
+              ? formData.transactionRef.trim()
+              : (formData.specialRequests ?? '').trim(),
+          'booking_status': 'CHECKED_IN',
+        });
+
+        await _addBookingImages(request, formData);
+
+        final signaturePhoto = formData.signaturePhotoPath;
+        await _addSignatureFile(
+          request,
+          photoPath: signaturePhoto,
+          points: formData.signaturePoints,
+          filename: 'signature.png',
+        );
+        for (var index = 0; index < formData.extraSignatures.length; index++) {
+          final extra = formData.extraSignatures[index];
+          await _addSignatureFile(
+            request,
+            photoPath: extra.photoPath,
+            points: extra.points,
+            filename: 'signature-${index + 2}.png',
+          );
+        }
+
+        final streamed = await _client.send(request).timeout(const Duration(seconds: 20));
+        final response = await http.Response.fromStream(streamed);
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
           final jsonResponse = jsonDecode(response.body) as Map<String, dynamic>;
@@ -505,9 +1030,7 @@ class DashboardRepository implements IDashboardRepository {
             keycardNumber: formData.assignedKeycardNumber.isNotEmpty
                 ? formData.assignedKeycardNumber
                 : apiFolio.keycardNumber,
-            address: formData.residentialAddress.isNotEmpty
-                ? '${formData.residentialAddress}, ${formData.city}, ${formData.state} - ${formData.pincode}'
-                : apiFolio.address,
+            address: _joinedAddress(formData).isNotEmpty ? _joinedAddress(formData) : apiFolio.address,
             gstNumber: formData.gstNumber ?? apiFolio.gstNumber,
             receiptNumber: receiptNumber ?? apiFolio.receiptNumber,
             specialRequests: formData.specialRequests ?? apiFolio.specialRequests,
@@ -522,31 +1045,23 @@ class DashboardRepository implements IDashboardRepository {
               r.roomNumber == formData.selectedRoomNumber ||
               r.roomNumber == '#${formData.selectedRoomNumber}');
           if (roomIndex != -1) {
-            _rooms[roomIndex] = _rooms[roomIndex].copyWith(
-              status: RoomStatus.occupied,
-              currentGuestName: enrichedFolio.guestName,
-              currentGuestFolioId: enrichedFolio.id,
+            _releaseAvailablePin(_rooms[roomIndex]);
+            _writeRoom(
+              roomIndex,
+              _rooms[roomIndex].copyWith(
+                status: RoomStatus.occupied,
+                currentGuestName: enrichedFolio.guestName,
+                currentGuestFolioId: enrichedFolio.id,
+              ),
             );
           }
 
           return enrichedFolio;
         } else {
-          String errorMessage = 'Check-in failed with status ${response.statusCode}';
-          try {
-            final errBody = jsonDecode(response.body) as Map<String, dynamic>;
-            if (errBody['message'] != null) {
-              errorMessage = errBody['message'].toString();
-            } else if (errBody['error'] != null) {
-              errorMessage = errBody['error'].toString();
-            }
-          } catch (_) {}
-          throw Exception(errorMessage);
+          throw Exception(_readApiError(response.body, response.statusCode));
         }
       } catch (e) {
-        if (_isCustomClient || (e is Exception && e.toString().contains('Check-in failed'))) {
-          rethrow;
-        }
-        // Fallback to local creation below if network unavailable
+        throw Exception(_checkInErrorText(e));
       }
     }
 
@@ -578,14 +1093,362 @@ class DashboardRepository implements IDashboardRepository {
     // Update the room to occupied
     final roomIndex = _rooms.indexWhere((r) => r.id == formData.selectedRoomId || r.roomNumber == formData.selectedRoomNumber || r.roomNumber == '#${formData.selectedRoomNumber}');
     if (roomIndex != -1) {
-      _rooms[roomIndex] = _rooms[roomIndex].copyWith(
-        status: RoomStatus.occupied,
-        currentGuestName: formData.guestFullName,
-        currentGuestFolioId: newFolioId,
+      _releaseAvailablePin(_rooms[roomIndex]);
+      _writeRoom(
+        roomIndex,
+        _rooms[roomIndex].copyWith(
+          status: RoomStatus.occupied,
+          currentGuestName: formData.guestFullName,
+          currentGuestFolioId: newFolioId,
+        ),
       );
     }
 
     return newFolio;
+  }
+
+  /// PUT /api/v1/bookings/{id}. No hotel_id. Auth comes from the signed-in session.
+  Future<GuestFolioModel> updateBooking({
+    required String bookingId,
+    required String guestName,
+    required String phone,
+    required String email,
+    required String address,
+    required String roomId,
+    required DateTime checkInDate,
+    required DateTime checkOutDate,
+    required int adults,
+    required int children,
+    required num baseAmount,
+    required num discountAmount,
+    required num extraCharges,
+    required num gstRate,
+    required num paidAmount,
+    required String notes,
+    String paymentMethod = 'UPI',
+    String secondaryGuestName = '',
+    String bookingStatus = 'CHECKED_IN',
+  }) async {
+    final id = bookingId.trim();
+    if (id.isEmpty) throw Exception('Could not update this booking.');
+    final payload = <String, dynamic>{
+      'primary_guest_name': guestName.trim(),
+      'secondary_guest_name': secondaryGuestName.trim(),
+      'mobile_number': _bookingMobile(phone),
+      'email': email.trim(),
+      'address': address.trim(),
+      'room_id': _roomIdFormValue(roomId),
+      'check_in_date': _bookingTimestamp(checkInDate, defaultHour: 14),
+      'check_out_date': _bookingTimestamp(checkOutDate, defaultHour: 12),
+      'adults': adults < 1 ? 1 : adults,
+      'children': children < 0 ? 0 : children,
+      'base_amount': _jsonAmount(baseAmount),
+      'discount_amount': _jsonAmount(discountAmount),
+      'extra_charges_total': _jsonAmount(extraCharges),
+      'gst_rate': _jsonAmount(gstRate),
+      'paid_amount': _jsonAmount(paidAmount),
+      'payment_method': _mapPaymentMethod(paymentMethod),
+      'notes': notes.trim(),
+      'booking_status': bookingStatus,
+    };
+    final response = await _client
+        .put(
+          Uri.parse('${ApiConstants.bookingsUrl}/$id'),
+          headers: const {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(payload),
+        )
+        .timeout(const Duration(seconds: 20));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_readApiError(response.body, response.statusCode, fallback: 'Could not update this booking.'));
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) throw Exception('Could not update this booking.');
+    final data = decoded['data'];
+    final bookingJson = data is Map
+        ? (data['booking'] is Map ? Map<String, dynamic>.from(data['booking'] as Map) : Map<String, dynamic>.from(data))
+        : payload;
+    return GuestFolioModel.fromJson(bookingJson);
+  }
+
+  num _jsonAmount(num value) => value == value.roundToDouble() ? value.round() : value;
+
+  @override
+  Future<GuestFolioModel> updateBookingFromForm(CheckInFormData formData) async {
+    final namedChildren = formData.accompanyingGuests
+        .where((guest) => guest.name.trim().isNotEmpty && guest.relationship.toLowerCase().contains('child'))
+        .length;
+    final childCount = namedChildren > 0 ? namedChildren : formData.savedChildCount;
+    final adults = formData.numberOfGuests > childCount
+        ? formData.numberOfGuests - childCount
+        : (formData.numberOfGuests > 0 ? formData.numberOfGuests : 1);
+    final secondaryName = (formData.secondGuestName ?? '').trim().isNotEmpty
+        ? formData.secondGuestName!.trim()
+        : formData.accompanyingGuests
+            .map((guest) => guest.name.trim())
+            .firstWhere((name) => name.isNotEmpty, orElse: () => '');
+    final stayNights = _calendarNights(formData.checkInDate, formData.checkOutDate);
+    final notes = formData.transactionRef.trim().isNotEmpty
+        ? formData.transactionRef.trim()
+        : (formData.specialRequests ?? '').trim();
+    final id = (formData.editingBookingId ?? '').trim();
+    if (id.isEmpty) throw Exception('Could not update this booking.');
+
+    final request = http.MultipartRequest('PUT', Uri.parse('${ApiConstants.bookingsUrl}/$id'));
+    request.headers['Accept'] = 'application/json';
+    request.fields.addAll({
+      'primary_guest_name': formData.guestFullName.trim(),
+      'secondary_guest_name': secondaryName,
+      'mobile_number': _bookingMobile(formData.contactPhone),
+      'email': formData.email.trim(),
+      'address': _joinedAddress(formData),
+      'room_id': _roomIdFormValue(formData.selectedRoomId),
+      'check_in_date': _bookingTimestamp(formData.checkInDate, defaultHour: 14),
+      'check_out_date': _bookingTimestamp(formData.checkOutDate, defaultHour: 12),
+      'adults': '${adults < 1 ? 1 : adults}',
+      'children': '${childCount < 0 ? 0 : childCount}',
+      'base_amount': _plainAmount(formData.pricePerNight * stayNights),
+      'discount_amount': _plainAmount(formData.discountAmount),
+      'extra_charges_total': _plainAmount(formData.extraBeds * 500),
+      'gst_rate': _plainAmount(formData.gstRate),
+      'paid_amount': _plainAmount(formData.advancePaid),
+      'payment_method': _mapPaymentMethod(formData.paymentMode),
+      'notes': notes,
+      'booking_status': 'CHECKED_IN',
+    });
+    await _addBookingImages(request, formData);
+    await _addSignatureFile(
+      request,
+      photoPath: formData.signaturePhotoPath,
+      points: formData.signaturePoints,
+      filename: 'signature.png',
+    );
+    for (var index = 0; index < formData.extraSignatures.length; index++) {
+      final extra = formData.extraSignatures[index];
+      await _addSignatureFile(
+        request,
+        photoPath: extra.photoPath,
+        points: extra.points,
+        filename: 'signature-${index + 2}.png',
+      );
+    }
+    if (!request.files.any((file) => file.field == 'images')) {
+      throw Exception('At least one image is required.');
+    }
+
+    final streamed = await _client.send(request).timeout(const Duration(seconds: 30));
+    final response = await http.Response.fromStream(streamed);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_readApiError(response.body, response.statusCode, fallback: 'Could not update this booking.'));
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) throw Exception('Could not update this booking.');
+    final data = decoded['data'];
+    final bookingJson = data is Map
+        ? (data['booking'] is Map ? Map<String, dynamic>.from(data['booking'] as Map) : Map<String, dynamic>.from(data))
+        : <String, dynamic>{'id': id, 'primary_guest_name': formData.guestFullName};
+    return GuestFolioModel.fromJson(bookingJson);
+  }
+
+  /// Applies a `booking:updated` payload to the in-memory rooms and folios.
+  @override
+  ({List<RoomModel> rooms, List<GuestFolioModel> folios}) applyLiveBooking(Map<String, dynamic> json) {
+    acceptRemoteRoomStatuses();
+    final folio = GuestFolioModel.fromJson(json);
+    final deleted = json['deleted_at'] ?? json['deletedAt'];
+    final removed = deleted != null && deleted.toString().trim().isNotEmpty && deleted.toString().toLowerCase() != 'null';
+    _folios.removeWhere((item) => item.id == folio.id || (folio.bookingId != null && item.bookingId == folio.bookingId));
+    if (removed || folio.status != FolioStatus.inHouse) {
+      _clearLiveGuest(folio);
+    } else {
+      _folios.insert(0, folio);
+      _clearLiveGuest(folio, keepMatchedRoom: true);
+      _attachCheckedInGuests();
+    }
+    return (
+      rooms: List<RoomModel>.from(_rooms),
+      folios: List<GuestFolioModel>.from(_folios),
+    );
+  }
+
+  void _clearLiveGuest(GuestFolioModel folio, {bool keepMatchedRoom = false}) {
+    final roomId = (folio.roomId ?? '').trim();
+    final digits = folio.assignedRoom.replaceAll(RegExp(r'[^0-9]'), '');
+    final updated = <RoomModel>[];
+    for (final room in _rooms) {
+      final roomDigits = room.roomNumber.replaceAll(RegExp(r'[^0-9]'), '');
+      final sameRoom = (roomId.isNotEmpty && room.id == roomId) || (digits.isNotEmpty && roomDigits == digits);
+      final sameGuest = room.currentGuestFolioId == folio.id ||
+          (folio.bookingId != null && room.currentGuestFolioId == folio.bookingId);
+      if (!sameRoom && !sameGuest) {
+        updated.add(room);
+        continue;
+      }
+      if (keepMatchedRoom && sameRoom) {
+        updated.add(room);
+        continue;
+      }
+      updated.add(room.copyWith(clearGuest: true));
+    }
+    _rooms = updated;
+  }
+
+  /// GET /api/v1/bookings/{id}. `data` is one booking object.
+  @override
+  Future<GuestFolioModel?> fetchBooking(String bookingId) async {
+    if (_shouldSkipLiveNetwork) return null;
+    final id = bookingId.trim();
+    if (id.isEmpty) return null;
+    try {
+      final response = await _client.get(
+        Uri.parse('${ApiConstants.bookingsUrl}/$id'),
+        headers: const {'Accept': 'application/json'},
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return null;
+      final data = decoded['data'];
+      if (data is! Map) return null;
+      return GuestFolioModel.fromJson(Map<String, dynamic>.from(data));
+    } catch (e) {
+      debugPrint('DashboardRepository.fetchBooking error: $e');
+      return null;
+    }
+  }
+
+  /// GET /api/v1/bookings/{id}/pdf, then download the generated file.
+  Future<BookingPdfFile> fetchBookingPdf(String bookingId) async {
+    if (_shouldSkipLiveNetwork) {
+      throw Exception('Could not generate the folio PDF.');
+    }
+    final id = bookingId.trim();
+    if (id.isEmpty) {
+      throw Exception('Could not generate the folio PDF.');
+    }
+    final response = await _client
+        .get(
+          Uri.parse('${ApiConstants.bookingsUrl}/$id/pdf'),
+          headers: const {'Accept': 'application/json'},
+        )
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_pdfErrorMessage(response));
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) {
+      throw Exception('Could not generate the folio PDF.');
+    }
+    final data = decoded['data'];
+    if (data is! Map) {
+      throw Exception('Could not generate the folio PDF.');
+    }
+    final url = (data['url'] ?? '').toString().trim();
+    var fileName = (data['file_name'] ?? data['fileName'] ?? '').toString().trim();
+    if (url.isEmpty) {
+      throw Exception('Could not generate the folio PDF.');
+    }
+    if (fileName.isEmpty) fileName = 'guest-folio.pdf';
+    final fileResponse = await _client.get(Uri.parse(url)).timeout(const Duration(seconds: 30));
+    if (fileResponse.statusCode < 200 || fileResponse.statusCode >= 300 || fileResponse.bodyBytes.isEmpty) {
+      throw Exception('Could not download the folio PDF.');
+    }
+    return BookingPdfFile(bytes: fileResponse.bodyBytes, fileName: fileName, url: url);
+  }
+
+  /// GET /api/v1/reports/gst/export?start_date=&end_date=&format=pdf|xlsx
+  Future<BookingPdfFile> exportGstReport({
+    required DateTime startDate,
+    required DateTime endDate,
+    required String format,
+  }) async {
+    if (_shouldSkipLiveNetwork) {
+      throw Exception('Could not download the GST report.');
+    }
+    final fileFormat = format.trim().toLowerCase() == 'xlsx' ? 'xlsx' : 'pdf';
+    final uri = Uri.parse(ApiConstants.gstReportExportUrl).replace(
+      queryParameters: {
+        'start_date': _reportDate(startDate),
+        'end_date': _reportDate(endDate),
+        'format': fileFormat,
+      },
+    );
+    final response = await _client
+        .get(uri, headers: const {'Accept': 'application/json'})
+        .timeout(const Duration(seconds: 30));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(_readApiError(response.body, response.statusCode, fallback: 'Could not download the GST report'));
+    }
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map || decoded['success'] == false) {
+      final message = decoded is Map ? decoded['message']?.toString() : null;
+      throw Exception(message == null || message.isEmpty ? 'Could not download the GST report.' : message);
+    }
+    final data = decoded['data'];
+    if (data is! Map) {
+      throw Exception('Could not download the GST report.');
+    }
+    final url = (data['url'] ?? '').toString().trim();
+    var fileName = (data['file_name'] ?? data['fileName'] ?? '').toString().trim();
+    if (url.isEmpty) {
+      throw Exception('Could not download the GST report.');
+    }
+    if (fileName.isEmpty) fileName = 'gst-report.$fileFormat';
+    final fileResponse = await _downloadReportFile(url);
+    if (fileResponse.statusCode < 200 || fileResponse.statusCode >= 300 || fileResponse.bodyBytes.isEmpty) {
+      throw Exception('Could not download the GST report.');
+    }
+    return BookingPdfFile(bytes: fileResponse.bodyBytes, fileName: fileName, url: url);
+  }
+
+  Future<http.Response> _downloadReportFile(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      final direct = await http.get(uri).timeout(const Duration(seconds: 30));
+      if (direct.statusCode >= 200 && direct.statusCode < 300 && direct.bodyBytes.isNotEmpty) {
+        return direct;
+      }
+    } catch (_) {}
+    return _client.get(uri).timeout(const Duration(seconds: 30));
+  }
+
+  String _reportDate(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  /// Live booking totals. `due` is what checkout must send as `paid_amount`.
+  Future<({double total, double paid, double due})?> fetchBookingSettlement(String bookingId) async {
+    if (_shouldSkipLiveNetwork) return null;
+    final id = bookingId.trim();
+    if (id.isEmpty) return null;
+    try {
+      final response = await _client.get(
+        Uri.parse('${ApiConstants.bookingsUrl}/$id'),
+        headers: const {'Accept': 'application/json'},
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) return null;
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return null;
+      final data = decoded['data'];
+      if (data is! Map) return null;
+      double read(dynamic value) {
+        if (value is num) return value.toDouble();
+        return double.tryParse(value?.toString() ?? '') ?? 0;
+      }
+
+      final total = read(data['total_amount'] ?? data['totalAmount']);
+      final paid = read(data['paid_amount'] ?? data['paidAmount']);
+      final due = data.containsKey('due_amount') || data.containsKey('dueAmount')
+          ? read(data['due_amount'] ?? data['dueAmount'])
+          : (total - paid).clamp(0, double.infinity).toDouble();
+      return (total: total, paid: paid, due: due);
+    } catch (e) {
+      debugPrint('DashboardRepository.fetchBookingSettlement error: $e');
+      return null;
+    }
   }
 
   @override
@@ -596,82 +1459,41 @@ class DashboardRepository implements IDashboardRepository {
     final index = _folios.indexWhere((f) => f.id == folioId || f.bookingId == folioId);
     final folio = index != -1 ? _folios[index] : null;
 
-    final targetBookingId = folio != null
-        ? (RegExp(r'^[a-fA-F0-9]{24}$').hasMatch(folio.id)
-            ? folio.id
-            : (folio.bookingId != null && RegExp(r'^[a-fA-F0-9]{24}$').hasMatch(folio.bookingId!)
-                ? folio.bookingId!
-                : folio.id))
-        : folioId;
-
-    final checkoutUrl = '$baseUrl/bookings/$targetBookingId/check-out';
-
-    final dailyRate = folio != null && folio.roomRatePerNight > 0
-        ? folio.roomRatePerNight.round()
-        : (folio != null && folio.totalAmount > 0 ? folio.totalAmount.round() : 2160);
-    final hourly = (dailyRate / 12).round() > 0 ? (dailyRate / 12).round() : 180;
-    final settlementAmount = folio != null && folio.pendingAmount > 0 ? folio.pendingAmount.round() : 0;
-
-    final payload = customPayload ??
-        {
-          "dailyRoomRate": dailyRate,
-          "gracePeriodMinutes": 10,
-          "hourlyRate": hourly,
-          "lateCheckoutFee": 0,
-          "lateCheckoutHours": 0,
-          "lateCheckoutMinutes": 0,
-          "lateCheckoutType": "none",
-          "paymentMethod": folio != null && folio.paymentMode.isNotEmpty ? folio.paymentMode.toUpperCase() : "CASH",
-          "paymentReference": "",
-          "settlementPaymentAmount": settlementAmount,
-          "transactionId": "",
-        };
+    final targetBookingId = (folio?.id ?? folioId).trim();
+    final checkoutUrl = '${ApiConstants.bookingsUrl}/$targetBookingId/check-out';
+    final settlementAmount = folio != null && folio.pendingAmount > 0 ? folio.pendingAmount : 0.0;
+    final payload = _checkoutPayload(
+      folio: folio,
+      settlementAmount: settlementAmount,
+      customPayload: customPayload,
+    );
 
     Map<String, dynamic> responseData = {
       "success": true,
-      "message": "Checkout complete for ${folio?.guestName ?? 'Guest'}. Room is now marked for CLEANING.",
-      "data": {
-        "bookingNumber": folio?.bookingId ?? "BK-187636-463",
-        "totalAmount": folio?.totalAmount ?? 2160,
-        "totalPaid": folio?.totalAmount ?? 2160,
-        "dueRemaining": 0,
-        "roomStatus": "CLEANING",
-        "receiptNumber": "",
-      }
+      "message": "Checkout completed successfully. Room is now marked for cleaning.",
     };
 
     if (!_shouldSkipLiveNetwork) {
-      try {
-        final response = await _client
-            .post(
-              Uri.parse(checkoutUrl),
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-              },
-              body: jsonEncode(payload),
-            )
-            .timeout(const Duration(seconds: 15));
+      final response = await _client
+          .post(
+            Uri.parse(checkoutUrl),
+            headers: const {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 15));
 
-        if (response.statusCode >= 200 && response.statusCode < 300) {
-          final jsonResp = jsonDecode(response.body) as Map<String, dynamic>;
-          responseData = jsonResp;
-        } else {
-          String errorMessage = 'Checkout failed with status ${response.statusCode}';
-          try {
-            final errBody = jsonDecode(response.body) as Map<String, dynamic>;
-            if (errBody['message'] != null) {
-              errorMessage = errBody['message'].toString();
-            } else if (errBody['error'] != null) {
-              errorMessage = errBody['error'].toString();
-            }
-          } catch (_) {}
-          if (_isCustomClient) {
-            throw Exception(errorMessage);
-          }
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          responseData = decoded;
+        } else if (decoded is Map) {
+          responseData = Map<String, dynamic>.from(decoded);
         }
-      } catch (e) {
-        if (_isCustomClient) rethrow;
+      } else {
+        throw Exception(_readApiError(response.body, response.statusCode, fallback: 'Checkout failed'));
       }
     }
 
@@ -688,15 +1510,53 @@ class DashboardRepository implements IDashboardRepository {
           'Room #${r.roomNumber}' == oldFolio.assignedRoom ||
           '#${r.roomNumber}' == oldFolio.assignedRoom);
       if (roomIndex != -1) {
-        _rooms[roomIndex] = _rooms[roomIndex].copyWith(
-          status: RoomStatus.cleaning,
-          currentGuestName: null,
-          currentGuestFolioId: null,
+        _releaseAvailablePin(_rooms[roomIndex]);
+        _writeRoom(
+          roomIndex,
+          _rooms[roomIndex].copyWith(
+            status: RoomStatus.cleaning,
+            currentGuestName: null,
+            currentGuestFolioId: null,
+          ),
         );
       }
     }
 
     return responseData;
+  }
+
+  Map<String, dynamic> _checkoutPayload({
+    required GuestFolioModel? folio,
+    required double settlementAmount,
+    Map<String, dynamic>? customPayload,
+  }) {
+    final paidRaw = customPayload?['paid_amount'] ?? settlementAmount;
+    final paidNumber = paidRaw is num ? paidRaw.toDouble() : settlementAmount;
+    final paidAmount = paidNumber == paidNumber.roundToDouble() ? paidNumber.round() : paidNumber;
+    final method = (customPayload?['payment_method'] ??
+            (folio != null && folio.paymentMode.trim().isNotEmpty ? folio.paymentMode : 'UPI'))
+        .toString()
+        .trim()
+        .toUpperCase();
+    final notes = (customPayload?['notes'] ??
+            (paidNumber > 0 ? 'Collected remaining balance at the desk' : ''))
+        .toString();
+    final payload = <String, dynamic>{
+      'paid_amount': paidAmount,
+      'payment_method': method.contains('CASH')
+          ? 'CASH'
+          : method.contains('CARD')
+              ? 'CARD'
+              : 'UPI',
+      'notes': notes,
+    };
+    if (customPayload?['late_checkout_charge'] != null) {
+      payload['late_checkout_charge'] = customPayload!['late_checkout_charge'];
+    }
+    if (customPayload?['late_checkout_hours'] != null) {
+      payload['late_checkout_hours'] = customPayload!['late_checkout_hours'];
+    }
+    return payload;
   }
 
   @override
@@ -762,7 +1622,7 @@ class DashboardRepository implements IDashboardRepository {
     }
   }
 
-  static List<RoomModel> _buildInitialRooms() => const [
+  static List<RoomModel> _buildInitialRooms() => List<RoomModel>.from(const [
     RoomModel(
       id: 'room-01',
       roomNumber: '#01',
@@ -917,7 +1777,7 @@ class DashboardRepository implements IDashboardRepository {
       maxOccupancy: 5,
       amenities: ['Private Lounge', 'Butler Service', 'Private Terrace'],
     ),
-  ];
+  ]);
 
   static List<GuestFolioModel> _buildInitialFolios() => [
     GuestFolioModel(
@@ -961,5 +1821,16 @@ class DashboardRepository implements IDashboardRepository {
       address: 'Mumbai, Maharashtra, India',
     ),
   ];
+}
+
+String _pdfErrorMessage(http.Response response) {
+  try {
+    final decoded = jsonDecode(response.body);
+    if (decoded is Map) {
+      final message = decoded['message']?.toString().trim() ?? '';
+      if (message.isNotEmpty) return message;
+    }
+  } catch (_) {}
+  return 'Could not generate the folio PDF.';
 }
 

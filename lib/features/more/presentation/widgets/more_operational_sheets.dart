@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../auth/presentation/bloc/auth_bloc.dart';
+
+String _signedInHotelName(BuildContext context) {
+  try {
+    final name = context.read<AuthBloc>().state.user?.hotel.name.trim() ?? '';
+    if (name.isNotEmpty) return name;
+  } catch (_) {}
+  return 'MYOWNPMS';
+}
 
 class MoreOperationalSheets {
   MoreOperationalSheets._();
@@ -650,7 +660,7 @@ class MoreOperationalSheets {
                 child: Column(
                   children: [
                     _reportDataRow('Business Date', '26 Sep 2026'),
-                    _reportDataRow('Property', 'Mayal Resort 2'),
+                    _reportDataRow('Property', _signedInHotelName(ctx)),
                     _reportDataRow('Total Rooms', '22 Units'),
                     _reportDataRow('Occupied Rooms', '18 Units (81.8%)'),
                     _reportDataRow('Available / Vacant', '4 Units'),

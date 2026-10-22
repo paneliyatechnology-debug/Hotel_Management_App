@@ -16,6 +16,7 @@ class DashboardState {
   final String selectedFloor;
   final String selectedStatus;
   final String? errorMessage;
+  final String? successMessage;
 
   const DashboardState({
     this.status = DashboardStatus.initial,
@@ -34,6 +35,7 @@ class DashboardState {
     this.selectedFloor = 'All Floors',
     this.selectedStatus = 'All Status',
     this.errorMessage,
+    this.successMessage,
   });
 
   DashboardState copyWith({
@@ -47,6 +49,8 @@ class DashboardState {
     String? selectedFloor,
     String? selectedStatus,
     String? errorMessage,
+    String? successMessage,
+    bool clearSuccess = false,
   }) {
     return DashboardState(
       status: status ?? this.status,
@@ -59,6 +63,7 @@ class DashboardState {
       selectedFloor: selectedFloor ?? this.selectedFloor,
       selectedStatus: selectedStatus ?? this.selectedStatus,
       errorMessage: errorMessage ?? this.errorMessage,
+      successMessage: clearSuccess ? null : (successMessage ?? this.successMessage),
     );
   }
 }

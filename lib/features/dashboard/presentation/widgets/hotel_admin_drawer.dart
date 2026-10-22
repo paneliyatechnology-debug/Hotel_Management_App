@@ -3,6 +3,12 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../auth/data/repositories/auth_repository.dart';
 import '../../../auth/presentation/pages/login_screen.dart';
+import '../pages/admin_rooms_tariffs_page.dart';
+import '../pages/admin_settings_page.dart';
+import '../pages/admin_staff_management_page.dart';
+import '../pages/admin_subscription_page.dart';
+import '../pages/hotel_admin_dashboard_view.dart';
+import '../pages/status_rooms_page.dart';
 
 class HotelAdminDrawer extends StatelessWidget {
   final String staffName;
@@ -37,7 +43,7 @@ class HotelAdminDrawer extends StatelessWidget {
           ],
         ),
         content: Text(
-          'Are you sure you want to sign out of the Grand Royale Hotel Admin PMS session?',
+          'Are you sure you want to sign out of the MYOWNPMS Hotel Admin session?',
           style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
         ),
         actions: [
@@ -65,6 +71,12 @@ class HotelAdminDrawer extends StatelessWidget {
     );
 
     if (shouldSignOut == true && context.mounted) {
+      StaffDirectoryMemory.clear();
+      RoomsDirectoryMemory.clear();
+      AdminDashboardMemory.clear();
+      SubscriptionPlansMemory.clear();
+      HotelSettingsMemory.clear();
+      StatusRoomsMemory.clear();
       await AuthRepository().logout();
       if (context.mounted) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -83,7 +95,7 @@ class HotelAdminDrawer extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 1. Sidebar Header: GRAND ROYALE Hotel Admin PMS
+            // 1. Sidebar Header: MYOWNPMS Hotel Admin PMS
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
               child: Row(
@@ -134,7 +146,7 @@ class HotelAdminDrawer extends StatelessWidget {
                           children: [
                             Flexible(
                               child: Text(
-                                'GRAND ROYALE',
+                                'MYOWNPMS',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: GoogleFonts.plusJakartaSans(
@@ -247,13 +259,6 @@ class HotelAdminDrawer extends StatelessWidget {
                     icon: Icons.settings_rounded,
                     label: 'Settings',
                     isActive: selectedNavIndex == 6,
-                    context: context,
-                  ),
-                  _buildNavItem(
-                    index: 7,
-                    icon: Icons.analytics_rounded,
-                    label: 'Revenue Reports',
-                    isActive: selectedNavIndex == 7,
                     context: context,
                   ),
                 ],

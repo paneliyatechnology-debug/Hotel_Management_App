@@ -3,11 +3,12 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/status_badge.dart';
+import '../../../dashboard/data/models/guest_folio_model.dart';
 import '../../../dashboard/presentation/bloc/dashboard_bloc.dart';
 import '../../../dashboard/presentation/bloc/dashboard_state.dart';
 import '../widgets/guest_folio_details_view.dart';
 
-class InHouseGuestDetailsPage extends StatelessWidget {
+class InHouseGuestDetailsPage extends StatefulWidget {
   final String folioId;
   final bool isEmbedded;
   final VoidCallback? onClose;
@@ -22,14 +23,21 @@ class InHouseGuestDetailsPage extends StatelessWidget {
   });
 
   @override
+  State<InHouseGuestDetailsPage> createState() => _InHouseGuestDetailsPageState();
+}
+
+class _InHouseGuestDetailsPageState extends State<InHouseGuestDetailsPage> {
+  GuestFolioModel? _loadedFolio;
+
+  @override
   Widget build(BuildContext context) {
     return BlocBuilder<DashboardBloc, DashboardState>(
       builder: (context, state) {
-        final folioList = state.folios.where((f) => f.id == folioId).toList();
+        final folioList = state.folios.where((f) => f.id == widget.folioId).toList();
         if (folioList.isEmpty) {
           return Scaffold(
             backgroundColor: Colors.white,
-            appBar: isEmbedded
+            appBar: widget.isEmbedded
                 ? null
                 : AppBar(
                     elevation: 0,
@@ -61,9 +69,9 @@ class InHouseGuestDetailsPage extends StatelessWidget {
           );
         }
 
-        final folio = folioList.first;
+        final folio = _loadedFolio ?? folioList.first;
 
-        if (isEmbedded) {
+        if (widget.isEmbedded) {
           return Container(
             color: Colors.white,
             child: Column(
@@ -86,10 +94,10 @@ class InHouseGuestDetailsPage extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      if (onClose != null)
+                      if (widget.onClose != null)
                         IconButton(
                           icon: const Icon(Icons.close_rounded, size: 20),
-                          onPressed: onClose,
+                          onPressed: widget.onClose,
                         ),
                     ],
                   ),
@@ -98,8 +106,11 @@ class InHouseGuestDetailsPage extends StatelessWidget {
                   child: GuestFolioDetailsView(
                     folio: folio,
                     isDialog: false,
-                    onClose: onClose,
-                    initialTabIndex: initialTabIndex,
+                    onClose: widget.onClose,
+                    initialTabIndex: widget.initialTabIndex,
+                    onFolioLoaded: (loaded) {
+                      if (mounted) setState(() => _loadedFolio = loaded);
+                    },
                   ),
                 ),
               ],
@@ -196,7 +207,10 @@ class InHouseGuestDetailsPage extends StatelessWidget {
           body: GuestFolioDetailsView(
             folio: folio,
             isDialog: false,
-            initialTabIndex: initialTabIndex,
+            initialTabIndex: widget.initialTabIndex,
+            onFolioLoaded: (loaded) {
+              if (mounted) setState(() => _loadedFolio = loaded);
+            },
           ),
         );
       },

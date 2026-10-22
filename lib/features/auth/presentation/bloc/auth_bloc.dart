@@ -1,4 +1,10 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../dashboard/presentation/pages/admin_rooms_tariffs_page.dart';
+import '../../../dashboard/presentation/pages/status_rooms_page.dart';
+import '../../../dashboard/presentation/pages/admin_settings_page.dart';
+import '../../../dashboard/presentation/pages/admin_staff_management_page.dart';
+import '../../../dashboard/presentation/pages/admin_subscription_page.dart';
+import '../../../dashboard/presentation/pages/hotel_admin_dashboard_view.dart';
 import '../../data/repositories/auth_repository.dart';
 import 'auth_event.dart';
 import 'auth_state.dart';
@@ -13,6 +19,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<ProfileRefreshRequested>(_onProfileRefreshRequested);
     on<LogoutRequested>(_onLogoutRequested);
     on<AuthErrorDismissed>(_onAuthErrorDismissed);
+    on<ForgotPasswordRequested>(_onForgotPasswordRequested);
   }
 
   Future<void> _onLoginSubmitted(
@@ -96,6 +103,12 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     LogoutRequested event,
     Emitter<AuthState> emit,
   ) async {
+    StaffDirectoryMemory.clear();
+    RoomsDirectoryMemory.clear();
+    AdminDashboardMemory.clear();
+    SubscriptionPlansMemory.clear();
+    HotelSettingsMemory.clear();
+    StatusRoomsMemory.clear();
     await repository.logout();
     emit(const AuthState(status: AuthStatus.unauthenticated));
   }
@@ -117,5 +130,26 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) {
     emit(state.copyWith(clearError: true));
+  }
+
+  Future<void> _onForgotPasswordRequested(
+    ForgotPasswordRequested event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(state.copyWith(status: AuthStatus.loading, clearError: true));
+
+    try {
+      final message = await repository.forgotPassword(email: event.email);
+      emit(state.copyWith(
+        status: AuthStatus.forgotPasswordSuccess,
+        successMessage: message,
+      ));
+    } catch (e) {
+      final message = e.toString().replaceFirst('Exception: ', '');
+      emit(state.copyWith(
+        status: AuthStatus.failure,
+        errorMessage: message,
+      ));
+    }
   }
 }

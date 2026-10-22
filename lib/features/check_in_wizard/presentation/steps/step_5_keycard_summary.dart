@@ -20,30 +20,7 @@ class Step5KeycardSummary extends StatefulWidget {
 }
 
 class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
-  late String _keycard;
-
-  final List<String> _availableKeycards = [
-    'KC-101 (Floor 1 NFC)',
-    'KC-102 (Floor 1 NFC)',
-    'KC-103 (Floor 1 Master)',
-    'KC-201 (Floor 2 NFC)',
-    'KC-202 (Floor 2 NFC)',
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _keycard = widget.formData.assignedKeycardNumber.isNotEmpty
-        ? widget.formData.assignedKeycardNumber
-        : _availableKeycards.first;
-  }
-
-  void _notify() {
-    final updated = widget.formData.copy();
-    updated.assignedKeycardNumber = _keycard;
-    updated.agreeTermsAndSignature = true;
-    widget.onDataChanged(updated);
-  }
+  String get _keyCode => widget.formData.assignedKeycardNumber.trim();
 
   @override
   Widget build(BuildContext context) {
@@ -78,60 +55,38 @@ class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
           ),
         ),
 
-        // RFID Keycard Assignment
-        Text(
-          'ASSIGN PHYSICAL RFID KEYCARD *',
-          style: GoogleFonts.inter(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.5,
-            color: AppColors.textSecondary,
-          ),
-        ),
-        const SizedBox(height: 8),
-
-        Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: AppColors.border),
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _availableKeycards.contains(_keycard) ? _keycard : _availableKeycards.first,
-              isExpanded: true,
-              icon: const Icon(Icons.keyboard_arrow_down, size: 18),
-              style: GoogleFonts.inter(fontSize: 13, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
-              items: _availableKeycards.map((kc) {
-                return DropdownMenuItem<String>(
-                  value: kc,
-                  child: Row(
-                    children: [
-                      const Icon(Icons.nfc, size: 16, color: AppColors.primary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          kc,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-              onChanged: (val) {
-                if (val != null) {
-                  setState(() => _keycard = val);
-                  _notify();
-                }
-              },
+        if (_keyCode.isNotEmpty && _keyCode.toLowerCase() != 'null') ...[
+          Text(
+            'ROOM KEY',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+              color: AppColors.textSecondary,
             ),
           ),
-        ),
-
-        const SizedBox(height: 20),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            height: 44,
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Text(
+              _keyCode,
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
 
         // Summary Card
         Container(
@@ -195,20 +150,7 @@ class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
                   'Second Guest',
                   '${widget.formData.secondGuestName}${widget.formData.secondGuestPhone != null && widget.formData.secondGuestPhone!.isNotEmpty ? " (${widget.formData.secondGuestPhone})" : ""}',
                 ),
-              _buildSummaryRow('Primary Govt ID', '${widget.formData.idType} (${widget.formData.idNumber.isNotEmpty ? widget.formData.idNumber : "Verified"})'),
-              if (widget.formData.idFrontPhotoUrl != null || widget.formData.idBackPhotoUrl != null)
-                _buildSummaryRow(
-                  'ID Document Photos',
-                  (widget.formData.idFrontPhotoUrl != null && widget.formData.idBackPhotoUrl != null)
-                      ? 'Front & Back Stored ✓'
-                      : (widget.formData.idFrontPhotoUrl != null ? 'Front Side Stored ✓' : 'Back Side Stored ✓'),
-                ),
-              _buildSummaryRow('Party / Guests', '${widget.formData.partyType} (${widget.formData.numberOfGuests} Total Guests)'),
-              if (widget.formData.accompanyingGuests.isNotEmpty)
-                _buildSummaryRow(
-                  'Attached Identities',
-                  widget.formData.accompanyingGuests.map((g) => '${g.name.isNotEmpty ? g.name : "Member"} (${g.relationship})').join(', '),
-                ),
+              _buildSummaryRow('Total Guests', '${widget.formData.numberOfGuests}'),
               _buildSummaryRow('Assigned Room', 'Room ${widget.formData.selectedRoomNumber} (${widget.formData.roomType})'),
               _buildSummaryRow('Stay Period', '${DateFormatter.formatDate(widget.formData.checkInDate)} to ${DateFormatter.formatDate(widget.formData.checkOutDate)} (${widget.formData.totalNights} Nights)'),
               if (widget.formData.contactPhone.isNotEmpty)

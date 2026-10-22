@@ -58,7 +58,7 @@ class SidebarNavigation extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'GRAND ROYALE',
+                        'MYOWNPMS',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,

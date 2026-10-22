@@ -179,6 +179,7 @@ class GuestProfileModel {
   final double advanceAmount;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final String bookingRecordId;
 
   const GuestProfileModel({
     required this.id,
@@ -207,6 +208,7 @@ class GuestProfileModel {
     this.advanceAmount = 0.0,
     this.createdAt,
     this.updatedAt,
+    this.bookingRecordId = '',
   });
 
   String get initials {
@@ -258,7 +260,7 @@ class GuestProfileModel {
         : (json['guest'] is Map ? Map<String, dynamic>.from(json['guest'] as Map) : null);
 
     // 2. Status parsing
-    final rawStatus = (json['status'] ?? '').toString().toUpperCase().trim();
+    final rawStatus = (json['booking_status'] ?? json['status'] ?? '').toString().toUpperCase().trim();
     GuestStatus status;
     if (rawStatus == 'IN_HOUSE' ||
         rawStatus == 'IN-HOUSE' ||
@@ -332,12 +334,15 @@ class GuestProfileModel {
 
     // 4. Room & Room Category
     final roomData = json['room'] is Map
-        ? json['room'] as Map
-        : null;
+        ? Map<String, dynamic>.from(json['room'] as Map)
+        : (json['rooms'] is List && (json['rooms'] as List).isNotEmpty && (json['rooms'] as List).first is Map
+            ? Map<String, dynamic>.from((json['rooms'] as List).first as Map)
+            : null);
     final roomTypeData = json['roomType'];
 
     final roomAssigned = (json['roomNumber'] ??
             roomData?['roomNumber'] ??
+            roomData?['room_number'] ??
             (json['roomNumbers'] is List && (json['roomNumbers'] as List).isNotEmpty
                 ? (json['roomNumbers'] as List).first.toString()
                 : null) ??
@@ -348,6 +353,7 @@ class GuestProfileModel {
     final roomCategoryName = (roomTypeData is Map
             ? roomTypeData['name']
             : null) ??
+        roomData?['room_type_name'] ??
         json['roomCategory'] ??
         (roomTypeData is String && roomTypeData.isNotEmpty ? roomTypeData : 'Standard Room');
 
@@ -363,8 +369,8 @@ class GuestProfileModel {
     final updatedAt =
         updatedAtRaw != null ? DateTime.tryParse(updatedAtRaw) : null;
 
-    final checkInRaw = json['checkInDate']?.toString() ?? json['checkInDateRaw']?.toString();
-    final checkOutRaw = json['checkOutDate']?.toString() ?? json['checkOutDateRaw']?.toString();
+    final checkInRaw = json['check_in_date']?.toString() ?? json['checkInDate']?.toString() ?? json['checkInDateRaw']?.toString();
+    final checkOutRaw = json['check_out_date']?.toString() ?? json['checkOutDate']?.toString() ?? json['checkOutDateRaw']?.toString();
     final actualCheckInRaw = json['actualCheckIn']?.toString();
     final actualCheckOutRaw = json['actualCheckOut']?.toString();
 
@@ -385,7 +391,7 @@ class GuestProfileModel {
             : null) ??
         checkInDate.add(const Duration(days: 1));
 
-    final bookingNumber = (json['bookingNumber'] ?? json['activeBookingNumber'] ?? 'N/A').toString();
+    final bookingNumber = (json['booking_number'] ?? json['bookingNumber'] ?? json['activeBookingNumber'] ?? 'N/A').toString();
 
     final totalAmount = (json['totalAmount'] as num?)?.toDouble() ??
         (json['baseAmount'] as num?)?.toDouble() ??
@@ -455,8 +461,22 @@ class GuestProfileModel {
         (totalAmount > 0 ? totalAmount : paidAmount);
 
     final guestId = (guestData?['_id'] ?? json['guestId'] ?? json['_id'] ?? json['id'] ?? '').toString();
-    final fullName = (guestData?['fullName'] ?? guestData?['name'] ?? json['fullName'] ?? json['name'] ?? 'Guest').toString().trim();
-    final mobile = (guestData?['mobileNumber'] ?? guestData?['phone'] ?? json['mobileNumber'] ?? json['phone'] ?? '').toString().trim();
+    final fullName = (guestData?['fullName'] ??
+            guestData?['name'] ??
+            json['primary_guest_name'] ??
+            json['fullName'] ??
+            json['name'] ??
+            'Guest')
+        .toString()
+        .trim();
+    final mobile = (guestData?['mobileNumber'] ??
+            guestData?['phone'] ??
+            json['mobile_number'] ??
+            json['mobileNumber'] ??
+            json['phone'] ??
+            '')
+        .toString()
+        .trim();
     final email = (guestData?['email'] ?? json['email'] ?? '').toString().trim();
     final gender = (guestData?['gender'] ?? json['gender'] ?? 'Not Specified').toString();
     final address = (guestData?['address'] ?? json['address'] ?? '').toString();
@@ -491,6 +511,7 @@ class GuestProfileModel {
       advanceAmount: advanceAmount,
       createdAt: createdAt,
       updatedAt: updatedAt,
+      bookingRecordId: (json['id'] ?? json['_id'] ?? guestId).toString(),
     );
   }
 }

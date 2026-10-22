@@ -1,5 +1,7 @@
 import '../../../../core/widgets/status_badge.dart';
+import '../../data/models/booking_list_query.dart';
 import '../../data/models/guest_folio_model.dart';
+import '../../data/models/room_live_update.dart';
 
 abstract class DashboardEvent {}
 
@@ -9,17 +11,11 @@ class RefreshDashboardDataEvent extends DashboardEvent {}
 
 class LoadBookingsEvent extends DashboardEvent {
   final bool showLoading;
-  final String status;
-  final String search;
-  final int page;
-  final int limit;
+  final BookingListQuery? query;
 
   LoadBookingsEvent({
     this.showLoading = false,
-    this.status = 'CHECKED_IN',
-    this.search = '',
-    this.page = 1,
-    this.limit = 20,
+    this.query,
   });
 }
 
@@ -79,4 +75,30 @@ class UpdateFolioKeycardEvent extends DashboardEvent {
     required this.keycardStatus,
     this.keycardNumber,
   });
+}
+
+class LiveRoomSyncEvent extends DashboardEvent {
+  final RoomLiveUpdate update;
+
+  LiveRoomSyncEvent(this.update);
+}
+
+class QuietRefreshLiveRoomsEvent extends DashboardEvent {}
+
+class ApplyLiveBookingEvent extends DashboardEvent {
+  final dynamic data;
+
+  ApplyLiveBookingEvent(this.data);
+}
+
+class ApplyCategoryCountsEvent extends DashboardEvent {
+  final dynamic data;
+
+  ApplyCategoryCountsEvent(this.data);
+}
+
+class ApplyLiveDashboardEvent extends DashboardEvent {
+  final dynamic data;
+
+  ApplyLiveDashboardEvent(this.data);
 }

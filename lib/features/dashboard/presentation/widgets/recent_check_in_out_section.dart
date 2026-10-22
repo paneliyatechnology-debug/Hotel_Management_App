@@ -228,7 +228,6 @@ class _RecentCheckInOutSectionState extends State<RecentCheckInOutSection> {
   Widget _buildCheckInOutCard(BuildContext context, GuestFolioModel folio) {
     final isInHouse = folio.status == FolioStatus.inHouse;
     final initial = folio.guestName.isNotEmpty ? folio.guestName[0].toUpperCase() : 'G';
-    final stayNights = folio.checkOutDate.difference(folio.checkInDate).inDays.clamp(1, 30);
 
     String roomLabel = folio.assignedRoom;
     if (!roomLabel.startsWith('Room ')) {
@@ -344,130 +343,91 @@ class _RecentCheckInOutSectionState extends State<RecentCheckInOutSection> {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: isInHouse ? const Color(0xFFECFDF5) : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: isInHouse ? const Color(0xFFA7F3D0) : const Color(0xFFCBD5E1),
-                          width: 0.8,
+                    if (isInHouse)
+                      OutlinedButton.icon(
+                        onPressed: widget.onCheckout == null ? null : () => widget.onCheckout!(folio),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFDC2626),
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(color: Color(0xFFDC2626), width: 1.2),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        icon: const Icon(Icons.logout_rounded, size: 13, color: Color(0xFFDC2626)),
+                        label: Text(
+                          'Checkout',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFFDC2626),
+                          ),
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFCBD5E1), width: 0.8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.arrow_back_rounded, size: 11, color: Color(0xFF64748B)),
+                            const SizedBox(width: 3),
+                            Text(
+                              'CHECKED-OUT',
+                              style: GoogleFonts.inter(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            isInHouse ? Icons.arrow_forward_rounded : Icons.arrow_back_rounded,
-                            size: 11,
-                            color: isInHouse ? const Color(0xFF059669) : const Color(0xFF64748B),
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            isInHouse ? 'CHECKED-IN' : 'CHECKED-OUT',
-                            style: GoogleFonts.inter(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: isInHouse ? const Color(0xFF059669) : const Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
 
                 const SizedBox(height: 10),
 
-                // Row 2: Date + Night Pill + Keycard Pill + Chevron
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.calendar_today_outlined,
-                              size: 12,
-                              color: Color(0xFF64748B),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${DateFormatter.formatDate(folio.checkInDate)} → ${DateFormatter.formatDate(folio.checkOutDate)}',
-                              style: GoogleFonts.inter(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                                color: const Color(0xFF64748B),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-
-                            // Night badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Text('🌙', style: TextStyle(fontSize: 9.5)),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    '$stayNights Night${stayNights > 1 ? 's' : ''}',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 9.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: const Color(0xFF2563EB),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // Keycard badge
-                            if (folio.keycardNumber != null && folio.keycardNumber!.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(5),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(
-                                      Icons.vpn_key_outlined,
-                                      size: 11,
-                                      color: Color(0xFF64748B),
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      folio.keycardNumber!,
-                                      style: GoogleFonts.inter(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF475569),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ],
+                    const Icon(
+                      Icons.calendar_today_outlined,
+                      size: 12,
+                      color: Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        '${DateFormatter.formatDate(folio.checkInDate)} → ${DateFormatter.formatDate(folio.checkOutDate)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF64748B),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      size: 16,
-                      color: Color(0xFF94A3B8),
-                    ),
+                    if (folio.keycardNumber != null && folio.keycardNumber!.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.vpn_key_outlined, size: 11, color: Color(0xFF64748B)),
+                      const SizedBox(width: 3),
+                      Text(
+                        folio.keycardNumber!,
+                        maxLines: 1,
+                        style: GoogleFonts.inter(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF475569),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ],

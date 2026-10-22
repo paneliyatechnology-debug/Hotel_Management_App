@@ -5,7 +5,10 @@ import 'package:my_own_pms_system/core/widgets/status_badge.dart';
 import 'package:my_own_pms_system/features/check_in_wizard/data/models/check_in_form_data.dart';
 import 'package:my_own_pms_system/features/check_in_wizard/presentation/bloc/check_in_bloc.dart';
 import 'package:my_own_pms_system/features/check_in_wizard/presentation/bloc/check_in_event.dart';
+import 'package:my_own_pms_system/core/utils/date_formatter.dart';
 import 'package:my_own_pms_system/features/check_in_wizard/presentation/pages/check_in_wizard_page.dart';
+import 'package:my_own_pms_system/features/check_in_wizard/presentation/steps/step_2_stay_room.dart';
+import 'package:my_own_pms_system/features/check_in_wizard/presentation/widgets/signature_pad_widget.dart';
 import 'package:my_own_pms_system/features/dashboard/domain/repositories/dashboard_repository.dart';
 import 'package:my_own_pms_system/features/dashboard/presentation/bloc/dashboard_bloc.dart';
 import 'package:my_own_pms_system/features/rooms/data/models/room_model.dart';
@@ -46,6 +49,20 @@ Widget createWizardTestApp({RoomModel? preselectedRoom, CheckInFormData? initial
   );
 }
 
+Future<void> completeGuestStep(WidgetTester tester) async {
+  final bloc = tester.element(find.byType(CheckInWizardPage)).read<CheckInBloc>();
+  final updated = bloc.state.formData.copy();
+  updated.guestFullName = 'Niraj Vekariya';
+  updated.contactPhone = '9876543210';
+  updated.idFrontPhotoUrl = 'scanned_aadhaar.png';
+  updated.idBackPhotoUrl = 'scanned_aadhaar_back.png';
+  updated.idPhotos = ['scanned_aadhaar.png', 'scanned_aadhaar_back.png'];
+  updated.isSignatureCaptured = true;
+  updated.signaturePoints = const [Offset(10, 10), Offset(40, 30)];
+  bloc.add(UpdateFormDataEvent(updated));
+  await tester.pumpAndSettle();
+}
+
 void main() {
   setUp(() {
     DashboardRepository(initialRooms: testRooms, initialFolios: testFolios);
@@ -59,8 +76,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify Mobile Header
-    expect(find.text('Mayal Resort 2'), findsOneWidget);
-    expect(find.text('GRAND ROYALE • FRONT DESK'), findsOneWidget);
+    expect(find.text('MYOWNPMS'), findsOneWidget);
+    expect(find.text('MYOWNPMS • FRONT DESK'), findsOneWidget);
 
     // Verify Modern Metrics Overview
     expect(find.text('LIVE METRICS OVERVIEW'), findsOneWidget);
@@ -97,16 +114,10 @@ void main() {
     // Verify Step 1 is rendered (Guest Profile only)
     expect(find.text('STEP 1 OF 4'), findsOneWidget);
     expect(find.text('PRIMARY GUEST IDENTITY'), findsOneWidget);
+    expect(find.text('Address'), findsOneWidget);
 
-    // Fill Step 1 with Quick Fill to satisfy validation
-    final quickFillBtn = find.text('Quick Fill');
-    await tester.tap(quickFillBtn);
-    await tester.pumpAndSettle();
-
-    // Clear any active snackbar so it doesn't intercept taps
-    final scaffoldMessenger = ScaffoldMessenger.of(tester.element(find.byType(CheckInWizardPage)));
-    scaffoldMessenger.clearSnackBars();
-    await tester.pumpAndSettle();
+    expect(find.text('Quick Fill'), findsNothing);
+    await completeGuestStep(tester);
 
     // Continue to Step 2 (Stay & Room Allocation)
     final continueBtn = find.text('Continue to Step 2');
@@ -159,7 +170,7 @@ void main() {
 
     // Verify CategoryRoomsPage is opened
     expect(find.text('FAMILY ROOMS INVENTORY'), findsNothing); // Checks category name in title
-    expect(find.text('Mayal Resort 2 • Room Number Inventory'), findsOneWidget);
+    expect(find.text('MYOWNPMS • Room Number Inventory'), findsOneWidget);
     expect(find.textContaining('AVAILABLE ROOM NUMBERS'), findsOneWidget);
 
     // Verify multiple family room numbers are displayed
@@ -168,7 +179,7 @@ void main() {
     expect(find.text('#11'), findsOneWidget);
 
     // Select Room #01
-    final selectRoomBtn = find.text('Select Room').first;
+    final selectRoomBtn = find.text('Check In').first;
     await tester.tap(selectRoomBtn);
     await tester.pumpAndSettle();
 
@@ -179,15 +190,8 @@ void main() {
     expect(find.text('LOCKED'), findsOneWidget);
     expect(find.text('ROOM #01 • FLOOR 1'), findsOneWidget);
 
-    // Fill valid guest data via Quick Fill
-    final quickFillBtn = find.text('Quick Fill');
-    await tester.tap(quickFillBtn);
-    await tester.pumpAndSettle();
-
-    // Clear any active snackbar so it doesn't intercept taps
-    final scaffoldMessenger = ScaffoldMessenger.of(tester.element(find.byType(CheckInWizardPage)));
-    scaffoldMessenger.clearSnackBars();
-    await tester.pumpAndSettle();
+    expect(find.text('Quick Fill'), findsNothing);
+    await completeGuestStep(tester);
 
     // Continue to Step 2 (Stay & Room Allocation)
     final continueBtn = find.text('Continue to Step 2');
@@ -217,8 +221,20 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify inline validation errors appear below fields
-    expect(find.text('Guest full name (as per Govt ID) is required'), findsOneWidget);
-    expect(find.text('Please enter valid Aadhaar Card document number'), findsOneWidget);
+    expect(find.text('Main guest name is required'), findsOneWidget);
+    expect(find.text('Mobile number is required'), findsOneWidget);
+    expect(find.text('Add at least 1 ID proof'), findsOneWidget);
+    expect(find.text('Signature is required'), findsOneWidget);
+    expect(find.text('House / flat, street, city'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextFormField, 'Enter guest name').first, 'Niraj Vekariya');
+    await tester.enterText(find.widgetWithText(TextFormField, '10-digit mobile number'), '12345');
+    await tester.ensureVisible(continueBtn);
+    await tester.tap(continueBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Enter a valid 10-digit mobile number'), findsOneWidget);
+    expect(find.text('PRIMARY GUEST IDENTITY'), findsOneWidget);
 
     // Verify no SnackBar error popup was created
     expect(find.byType(SnackBar), findsNothing);
@@ -229,6 +245,29 @@ void main() {
     await tester.tap(stayTab);
     await tester.pumpAndSettle();
     expect(find.text('PRIMARY GUEST IDENTITY'), findsOneWidget);
+  });
+
+  testWidgets('Guest Name keeps a space between words', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(createWizardTestApp());
+    await tester.pumpAndSettle();
+
+    final guestName = find.widgetWithText(TextFormField, 'Enter guest name').at(1);
+    await tester.ensureVisible(guestName);
+    await tester.enterText(guestName, 'Pooja ');
+    await tester.pump();
+
+    expect(tester.widget<TextFormField>(guestName).controller!.text, 'Pooja ');
+
+    await tester.enterText(guestName, 'Pooja Vekariya');
+    await tester.pump();
+    expect(tester.widget<TextFormField>(guestName).controller!.text, 'Pooja Vekariya');
   });
 
   testWidgets('Check-In Wizard 4-Step Flow with Room Details and Optional Second Guest', (WidgetTester tester) async {
@@ -254,16 +293,8 @@ void main() {
     expect(find.text('STEP 1 OF 4'), findsOneWidget);
     expect(find.text('PRIMARY GUEST IDENTITY'), findsOneWidget);
 
-    // Auto-fill demo data
-    final quickFillBtn = find.text('Quick Fill');
-    await tester.ensureVisible(quickFillBtn);
-    await tester.tap(quickFillBtn);
-    await tester.pumpAndSettle();
-
-    // Clear snackbars
-    final scaffoldMessenger = ScaffoldMessenger.of(tester.element(find.byType(CheckInWizardPage)));
-    scaffoldMessenger.clearSnackBars();
-    await tester.pumpAndSettle();
+    expect(find.text('Quick Fill'), findsNothing);
+    await completeGuestStep(tester);
 
     // Continue to Step 2 (Stay & Room Allocation)
     final continueBtn = find.text('Continue to Step 2');
@@ -326,7 +357,7 @@ void main() {
     await tester.tap(familyRoomCard);
     await tester.pumpAndSettle();
 
-    expect(find.text('Mayal Resort 2 • Room Number Inventory'), findsOneWidget);
+    expect(find.text('MYOWNPMS • Room Number Inventory'), findsOneWidget);
   });
 
   testWidgets('In-House Folios 2026 UI: Filter tabs, search, full guest names & luxury card layout', (WidgetTester tester) async {
@@ -404,6 +435,29 @@ void main() {
     expect(find.text('Back ID'), findsNothing);
   });
 
+  testWidgets('Add ID Proof sheet fits a phone without overflow', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(createWizardTestApp());
+    await tester.pumpAndSettle();
+
+    final addProof = find.text('Add ID Proof');
+    await tester.ensureVisible(addProof);
+    await tester.tap(addProof);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Document Scanner'), findsOneWidget);
+    expect(find.text('AI Auto-Crop'), findsOneWidget);
+    expect(find.text('Select from Gallery'), findsOneWidget);
+    expect(find.text('Multi-Select'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('ID Proofs Attached Preview: Preloaded ID photos display preview with Remove', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1200, 1920);
     tester.view.devicePixelRatio = 1.0;
@@ -453,67 +507,71 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify Signature Pad is rendered in Step 1
-    final sigPadTitle = find.text('Main Guest Signature');
-    expect(sigPadTitle, findsOneWidget);
-    await tester.ensureVisible(sigPadTitle);
+    final signaturePad = find.byType(SignaturePadWidget);
+    expect(signaturePad, findsOneWidget);
+    await tester.ensureVisible(signaturePad);
     await tester.pumpAndSettle();
 
     expect(find.text('Required'), findsOneWidget);
-    expect(find.text('Touch & drag finger here to sign'), findsOneWidget);
+    expect(find.text('Camera'), findsOneWidget);
+    expect(find.text('Digital Pad'), findsOneWidget);
+    expect(find.text('Phone QR'), findsNothing);
+    expect(find.text('Type Name'), findsNothing);
+    expect(find.byKey(const ValueKey('capture_signature_camera_btn')), findsOneWidget);
 
-    // Draw signature directly on canvas via touch drag
-    await tester.drag(find.text('Touch & drag finger here to sign'), const Offset(60, 20), warnIfMissed: false);
+    await tester.tap(find.text('Digital Pad'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('add_signature_btn')));
     await tester.pumpAndSettle();
 
-    // Status updates to Signed
+    final canvasFinder = find.byKey(const ValueKey('dialog_drawing_canvas'));
+    expect(canvasFinder, findsOneWidget);
+    await tester.drag(canvasFinder, const Offset(60, 20));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('dialog_done_signature_btn')));
+    await tester.pumpAndSettle();
+
     expect(find.text('Signed'), findsOneWidget);
     expect(find.text('Signature captured!'), findsOneWidget);
+  });
 
-    // Switch to Phone QR tab
-    final phoneQrTab = find.text('Phone QR');
-    expect(phoneQrTab, findsOneWidget);
-    await tester.tap(phoneQrTab);
+  testWidgets('Stay step check-in stays on today and checkout cannot be earlier', (WidgetTester tester) async {
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    DateTime? savedCheckIn;
+    DateTime? savedCheckOut;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Step2StayRoom(
+            formData: CheckInFormData(
+              checkInDate: DateTime(2020, 1, 1),
+              checkOutDate: DateTime(2020, 1, 2),
+            ),
+            availableRooms: const [],
+            onDataChanged: (data) {
+              savedCheckIn = data.checkInDate;
+              savedCheckOut = data.checkOutDate;
+            },
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    // Verify received mobile signature UI
-    expect(find.text('Signature Received from Mobile!'), findsOneWidget);
-    expect(find.text('Signature successfully received from mobile device.'), findsOneWidget);
+    expect(find.text(DateFormatter.formatDate(todayDate)), findsWidgets);
+    expect(find.text('01/01/2020'), findsNothing);
+    expect(savedCheckIn, todayDate);
+    expect(savedCheckOut, todayDate.add(const Duration(days: 1)));
 
-    // Tap Clear
-    final clearBtn = find.byKey(const ValueKey('signature_clear_btn'));
-    expect(clearBtn, findsOneWidget);
-    await tester.tap(clearBtn);
+    await tester.tap(find.text(DateFormatter.formatDate(todayDate)).first);
     await tester.pumpAndSettle();
-
-    // Status reverts to Required
-    expect(find.text('Required'), findsOneWidget);
-    expect(find.text('Scan with Smartphone to Sign Remotely'), findsOneWidget);
-
-    // Switch to Type Name tab on mobile width without overflow
-    final typeNameTab = find.text('Type Name');
-    expect(typeNameTab, findsOneWidget);
-    await tester.tap(typeNameTab);
+    expect(find.text('OK'), findsOneWidget);
+    await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
-
-    // Verify Type Name elements
-    expect(find.text('Guest Full Name:'), findsOneWidget);
-    expect(find.text('Font Style:'), findsOneWidget);
-    expect(find.text('Cursive'), findsOneWidget);
-    expect(find.text('Calligraphy'), findsOneWidget);
-    expect(find.text('Casual'), findsOneWidget);
-
-    // Select Calligraphy style
-    await tester.tap(find.text('Calligraphy'));
-    await tester.pumpAndSettle();
-
-    // Tap Apply This Signature
-    final applyBtn = find.text('Apply This Signature');
-    expect(applyBtn, findsOneWidget);
-    await tester.tap(applyBtn);
-    await tester.pumpAndSettle();
-
-    // Signature status is Signed
-    expect(find.text('Signed'), findsOneWidget);
+    expect(find.text(DateFormatter.formatDate(todayDate)), findsWidgets);
+    expect(savedCheckIn, todayDate);
   });
 }
 

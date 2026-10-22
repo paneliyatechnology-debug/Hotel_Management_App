@@ -25,18 +25,12 @@ void main() {
       await tester.pumpAndSettle();
 
       // 1. Verify Top Header & Titles
-      expect(find.text('Mayal Resort 2'), findsWidgets);
+      expect(find.text('MYOWNPMS'), findsWidgets);
       expect(find.text('In-House'), findsWidgets);
       expect(find.text('Currently staying guests'), findsOneWidget);
       expect(find.text('In-House Folios & Guest Registry'), findsOneWidget);
 
-      // 2. Verify 4 Summary KPI Cards
-      expect(find.text('IN-HOUSE'), findsWidgets);
-      expect(find.text('FOLIO VALUE'), findsOneWidget);
-      expect(find.text('CHECKOUT TODAY'), findsOneWidget);
-      expect(find.text('PAYMENT PENDING'), findsOneWidget);
-
-      // 3. Verify Initial Guest Cards
+      // 2. Verify Initial Guest Cards
       expect(find.text('Vikram Mehta'), findsOneWidget);
       expect(find.text('Niraj Vekariya'), findsOneWidget);
 
@@ -50,6 +44,39 @@ void main() {
       expect(find.text('Checkout Today (0)'), findsOneWidget);
       expect(find.text('Payment Pending (2)'), findsOneWidget);
       expect(find.text('Keycard Issue'), findsOneWidget);
+    });
+
+    testWidgets('guest filter sheet collects booking filters', (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await tester.pumpWidget(const MyOwnPMSApp());
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.people_alt_outlined).last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.tune_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Filter Guests'), findsOneWidget);
+      expect(find.text('Booking status'), findsOneWidget);
+      expect(find.text('Payment status'), findsOneWidget);
+      expect(find.text('Primary guest'), findsOneWidget);
+      expect(find.text('Apply Filters'), findsOneWidget);
+
+      await tester.tap(find.text('Checked In'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Pending'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('guestFilterPrimaryGuest')), 'Ravi');
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('guestFilterApply')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Filter Guests'), findsNothing);
+      expect(find.textContaining('CHECKED IN'), findsOneWidget);
+      expect(find.textContaining('Ravi'), findsWidgets);
     });
 
     testWidgets('Universal Search filters by room number and guest name', (tester) async {
@@ -110,12 +137,19 @@ void main() {
       expect(find.text('Guest Details'), findsOneWidget);
       expect(find.text('Personal Information'), findsOneWidget);
       expect(find.text('KYC & Govt Identity Verification'), findsOneWidget);
-      expect(find.text('Current Stay Details'), findsOneWidget);
-      expect(find.text('Folio & Billing Breakdown'), findsOneWidget);
-
-      // Verify KYC details are masked in details screen
+      expect(find.text('Current Stay Details'), findsNothing);
+      expect(find.text('Folio & Billing Breakdown'), findsNothing);
       expect(find.text('VERIFIED'), findsOneWidget);
-      expect(find.text('•••• •••• 3411'), findsOneWidget);
+
+      await tester.tap(find.text('Rooms'));
+      await tester.pumpAndSettle();
+      expect(find.text('Current Stay Details'), findsOneWidget);
+      expect(find.text('Folio & Billing Breakdown'), findsNothing);
+
+      await tester.tap(find.text('Billing'));
+      await tester.pumpAndSettle();
+      expect(find.text('Folio & Billing Breakdown'), findsOneWidget);
+      expect(find.text('Current Stay Details'), findsNothing);
 
       // Pop details screen back
       await tester.pageBack();
@@ -171,7 +205,8 @@ void main() {
       // In split view, both the In-House list AND the selected guest details appear on the same screen
       expect(find.text('In-House'), findsWidgets);
       expect(find.text('Guest Details'), findsOneWidget);
-      expect(find.text('Folio & Billing Breakdown'), findsOneWidget);
+      expect(find.text('Personal Information'), findsOneWidget);
+      expect(find.text('Folio & Billing Breakdown'), findsNothing);
     });
   });
 }

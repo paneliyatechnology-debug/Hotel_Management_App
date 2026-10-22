@@ -4,6 +4,7 @@ import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../data/models/admin_models.dart';
 import '../../data/repositories/hotel_admin_repository.dart';
+import '../widgets/dashboard_shimmer_loader.dart';
 
 class AdminDailyCollectionsPage extends StatefulWidget {
   final HotelAdminRepository? repository;
@@ -245,7 +246,7 @@ class _AdminDailyCollectionsPageState extends State<AdminDailyCollectionsPage> {
         ],
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF0F766E)))
+          ? const DailyCollectionsShimmer()
           : _errorMessage != null
               ? Center(
                   child: Padding(

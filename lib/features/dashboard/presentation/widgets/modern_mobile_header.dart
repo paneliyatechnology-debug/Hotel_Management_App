@@ -17,7 +17,7 @@ class ModernMobileHeader extends StatelessWidget {
 
   const ModernMobileHeader({
     super.key,
-    this.resortName = 'Mayal Resort 2',
+    this.resortName = '',
     this.staffName = 'Front Desk',
     this.role = 'FRONT DESK',
     this.availableRooms = 0,
@@ -134,7 +134,7 @@ class ModernMobileHeader extends StatelessWidget {
                                   children: [
                                     Flexible(
                                       child: Text(
-                                        resortName,
+                                        resortName.isNotEmpty ? resortName : 'MYOWNPMS',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: GoogleFonts.inter(
@@ -144,14 +144,11 @@ class ModernMobileHeader extends StatelessWidget {
                                         ),
                                       ),
                                     ),
-                                    const SizedBox(width: 2),
-                                    const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF0F766E)),
                                   ],
                                 ),
                                 Text(
                                   screenTitle!,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 2,
                                   style: GoogleFonts.inter(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w800,
@@ -183,7 +180,7 @@ class ModernMobileHeader extends StatelessWidget {
                                     children: [
                                       Flexible(
                                         child: Text(
-                                          resortName,
+                                          resortName.isNotEmpty ? resortName : 'MYOWNPMS',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: GoogleFonts.inter(
@@ -193,8 +190,6 @@ class ModernMobileHeader extends StatelessWidget {
                                           ),
                                         ),
                                       ),
-                                      const SizedBox(width: 2),
-                                      const Icon(Icons.arrow_drop_down, size: 18, color: AppColors.textSecondary),
                                     ],
                                   ),
                                 ),
@@ -212,7 +207,7 @@ class ModernMobileHeader extends StatelessWidget {
                                     const SizedBox(width: 5),
                                     Flexible(
                                       child: Text(
-                                        'GRAND ROYALE • ${role.toUpperCase()}',
+                                        'MYOWNPMS • ${role.toUpperCase()}',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: GoogleFonts.inter(

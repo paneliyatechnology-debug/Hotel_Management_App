@@ -73,16 +73,15 @@ void main() {
 
     // Verify footer actions are visible and NOT overflowed
     expect(find.text('Guest Folio PDF'), findsOneWidget);
-    expect(find.text('ID Proofs (.ZIP)'), findsOneWidget);
     expect(find.text('Send on WhatsApp'), findsOneWidget);
-    expect(find.text('Close'), findsOneWidget);
+    expect(find.byIcon(Icons.close_rounded), findsWidgets);
 
     // Scroll inside the tab body to verify scrollability
     await tester.drag(find.text('Personal Information'), const Offset(0, -200));
     await tester.pumpAndSettle();
 
-    // Tap Close to dismiss
-    await tester.tap(find.text('Close'));
+    // Tap close icon to dismiss
+    await tester.tap(find.byIcon(Icons.close_rounded).first);
     await tester.pumpAndSettle();
     expect(find.text('Keyur Sangani'), findsNothing);
   });
@@ -137,6 +136,6 @@ void main() {
 
     expect(find.text('Keyur Sangani'), findsWidgets);
     expect(find.text('Guest Folio PDF'), findsOneWidget);
-    expect(find.text('Close'), findsOneWidget);
+    expect(find.byIcon(Icons.close_rounded), findsWidgets);
   });
 }

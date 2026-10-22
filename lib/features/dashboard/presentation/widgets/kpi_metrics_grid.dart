@@ -21,6 +21,7 @@ class KpiMetricsGrid extends StatelessWidget {
 
         final availableCard = MetricCard(
           title: 'Available Vacant',
+          displayTitle: 'Available',
           count: stats.availableVacant,
           subtitle: 'Ready for check-in',
           tagLabel: 'Vacant',
@@ -32,8 +33,9 @@ class KpiMetricsGrid extends StatelessWidget {
 
         final occupiedCard = MetricCard(
           title: 'Occupied / Booked',
+          displayTitle: 'Occupied',
           count: stats.occupiedInHouse,
-          subtitle: 'Active guest stay',
+          subtitle: 'Guests staying',
           tagLabel: 'In-House',
           themeColor: AppColors.statusOccupied,
           badgeBgColor: AppColors.statusOccupiedBg,
@@ -43,8 +45,9 @@ class KpiMetricsGrid extends StatelessWidget {
 
         final housekeepingCard = MetricCard(
           title: 'Housekeeping Queue',
+          displayTitle: 'Housekeeping',
           count: stats.housekeepingQueue,
-          subtitle: 'Sanitation buffer',
+          subtitle: 'Rooms to clean',
           tagLabel: 'Cleaning',
           themeColor: AppColors.statusCleaning,
           badgeBgColor: AppColors.statusCleaningBg,
@@ -54,8 +57,9 @@ class KpiMetricsGrid extends StatelessWidget {
 
         final maintenanceCard = MetricCard(
           title: 'Maintenance / Blocked',
+          displayTitle: 'Maintenance',
           count: stats.maintenanceBlocked,
-          subtitle: 'Out of service repairs',
+          subtitle: 'Out of service',
           tagLabel: 'Blocked',
           themeColor: AppColors.statusMaintenance,
           badgeBgColor: AppColors.statusMaintenanceBg,
@@ -113,9 +117,9 @@ class KpiMetricsGrid extends StatelessWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           crossAxisCount: 2,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 1.55,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 1.35,
           children: [
             availableCard,
             occupiedCard,

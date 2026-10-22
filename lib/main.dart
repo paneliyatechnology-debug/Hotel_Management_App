@@ -15,6 +15,7 @@ import 'features/auth/data/repositories/auth_repository.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/auth/presentation/bloc/auth_event.dart';
 import 'features/auth/presentation/pages/splash_screen.dart';
+import 'features/dashboard/presentation/live/room_live_sync.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,11 +59,13 @@ class MyOwnPMSApp extends StatelessWidget {
           create: (_) => AuthBloc(repository: effectiveAuthRepository)..add(const AuthCheckRequested()),
         ),
       ],
-      child: MaterialApp(
-        title: 'MyOwnPMS System',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.lightTheme,
-        home: initialHome,
+      child: RoomLiveBinder(
+        child: MaterialApp(
+          title: 'MyOwnPMS System',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          home: initialHome,
+        ),
       ),
     );
   }

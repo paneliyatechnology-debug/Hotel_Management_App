@@ -5,8 +5,16 @@ class HotelStatsModel {
   final int maintenanceBlocked;
   final int totalInHouseGuests;
   final double todayCash;
+  final double todayUpi;
   final double todayOnline;
   final double totalToday;
+  final int checkedInToday;
+  final double monthRevenue;
+  final double outstandingDue;
+  final int occupancyRatePercentage;
+  final int totalPhysicalRooms;
+  final int activeStaffCount;
+  final bool fromAdminApi;
   final List<dynamic> todayArrivals;
   final List<dynamic> todayDepartures;
 
@@ -17,8 +25,16 @@ class HotelStatsModel {
     required this.maintenanceBlocked,
     required this.totalInHouseGuests,
     this.todayCash = 0.0,
+    this.todayUpi = 0.0,
     this.todayOnline = 0.0,
     this.totalToday = 0.0,
+    this.checkedInToday = 0,
+    this.monthRevenue = 0.0,
+    this.outstandingDue = 0.0,
+    this.occupancyRatePercentage = -1,
+    this.totalPhysicalRooms = 0,
+    this.activeStaffCount = 0,
+    this.fromAdminApi = false,
     this.todayArrivals = const [],
     this.todayDepartures = const [],
   });
@@ -65,8 +81,16 @@ class HotelStatsModel {
     int? maintenanceBlocked,
     int? totalInHouseGuests,
     double? todayCash,
+    double? todayUpi,
     double? todayOnline,
     double? totalToday,
+    int? checkedInToday,
+    double? monthRevenue,
+    double? outstandingDue,
+    int? occupancyRatePercentage,
+    int? totalPhysicalRooms,
+    int? activeStaffCount,
+    bool? fromAdminApi,
     List<dynamic>? todayArrivals,
     List<dynamic>? todayDepartures,
   }) {
@@ -77,8 +101,16 @@ class HotelStatsModel {
       maintenanceBlocked: maintenanceBlocked ?? this.maintenanceBlocked,
       totalInHouseGuests: totalInHouseGuests ?? this.totalInHouseGuests,
       todayCash: todayCash ?? this.todayCash,
+      todayUpi: todayUpi ?? this.todayUpi,
       todayOnline: todayOnline ?? this.todayOnline,
       totalToday: totalToday ?? this.totalToday,
+      checkedInToday: checkedInToday ?? this.checkedInToday,
+      monthRevenue: monthRevenue ?? this.monthRevenue,
+      outstandingDue: outstandingDue ?? this.outstandingDue,
+      occupancyRatePercentage: occupancyRatePercentage ?? this.occupancyRatePercentage,
+      totalPhysicalRooms: totalPhysicalRooms ?? this.totalPhysicalRooms,
+      activeStaffCount: activeStaffCount ?? this.activeStaffCount,
+      fromAdminApi: fromAdminApi ?? this.fromAdminApi,
       todayArrivals: todayArrivals ?? this.todayArrivals,
       todayDepartures: todayDepartures ?? this.todayDepartures,
     );

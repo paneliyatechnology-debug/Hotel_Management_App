@@ -10,7 +10,12 @@ import 'package:my_own_pms_system/features/auth/presentation/bloc/auth_event.dar
 import 'package:my_own_pms_system/features/auth/presentation/bloc/auth_state.dart';
 import 'package:my_own_pms_system/features/auth/presentation/pages/splash_screen.dart';
 import 'package:my_own_pms_system/features/auth/presentation/pages/login_screen.dart';
+import 'package:my_own_pms_system/features/auth/presentation/pages/forgot_password_screen.dart';
 import 'package:my_own_pms_system/features/dashboard/presentation/pages/mobile_main_screen.dart';
+import 'package:my_own_pms_system/core/constants/api_constants.dart';
+import 'package:my_own_pms_system/features/auth/data/models/login_response_model.dart';
+import 'package:my_own_pms_system/features/auth/data/models/refresh_token_response_model.dart';
+import 'package:my_own_pms_system/features/auth/data/models/auth_user_model.dart';
 import 'package:my_own_pms_system/features/auth/data/repositories/authenticated_http_client.dart';
 
 class _FakeHttpClient extends http.BaseClient {
@@ -228,7 +233,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       // Check Brand Titles and Elements
-      expect(find.text('MyOwnPms'), findsOneWidget);
+      expect(find.text('MYOWNPMS'), findsWidgets);
       expect(find.text('CLOUD HOTEL PMS'), findsOneWidget);
       expect(find.text('Hospitality Property Management System'), findsOneWidget);
       expect(find.text('Starting Front Desk Terminal #01...'), findsOneWidget);
@@ -257,7 +262,7 @@ void main() {
       expect(find.text('MYOWNPMS'), findsOneWidget);
       expect(find.text('NEXT-GEN HOTEL PMS PLATFORM'), findsOneWidget);
       expect(find.text('Welcome Back'), findsOneWidget);
-      expect(find.text('Staff Email'), findsOneWidget);
+      expect(find.text('Email'), findsOneWidget);
       expect(find.text('Password'), findsOneWidget);
       expect(find.text('Remember station'), findsOneWidget);
       expect(find.text('Forgot Password?'), findsOneWidget);
@@ -275,17 +280,17 @@ void main() {
       await tester.pump();
       expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
 
-      // 3. Test Forgot Password bottom sheet
+      // 3. Test Forgot Password screen & Sign In back navigation
       await tester.tap(find.text('Forgot Password?'));
       await tester.pumpAndSettle();
-      expect(find.text('Staff Password Reset'), findsOneWidget);
-      expect(find.text('+91 98765 43210 • Ext 101'), findsOneWidget);
-      await tester.tap(find.text('Understood'));
+      expect(find.text('Password Reset'), findsOneWidget);
+      expect(find.text('Sign In'), findsOneWidget);
+      await tester.tap(find.text('Sign In'));
       await tester.pumpAndSettle();
-      expect(find.text('Staff Password Reset'), findsNothing);
+      expect(find.text('Password Reset'), findsNothing);
 
       // 4. Enter credentials directly into text fields
-      final emailField = find.widgetWithText(TextFormField, 'Enter your staff email');
+      final emailField = find.widgetWithText(TextFormField, 'Enter your email');
       final passField = find.widgetWithText(TextFormField, 'Enter your password');
       await tester.enterText(emailField, 'jatinkakadiya01@gmail.com');
       await tester.enterText(passField, 'jk@1234');
@@ -315,7 +320,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Clear email and password
-      final emailField = find.widgetWithText(TextFormField, 'Enter your staff email');
+      final emailField = find.widgetWithText(TextFormField, 'Enter your email');
       final passField = find.widgetWithText(TextFormField, 'Enter your password');
 
       await tester.enterText(emailField, '');
@@ -327,7 +332,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Assert validation messages
-      expect(find.text('Staff email cannot be empty'), findsOneWidget);
+      expect(find.text('Email cannot be empty'), findsOneWidget);
       expect(find.text('Password cannot be empty'), findsOneWidget);
     });
 
@@ -417,7 +422,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final emailField = find.widgetWithText(TextFormField, 'Enter your staff email');
+      final emailField = find.widgetWithText(TextFormField, 'Enter your email');
       final passField = find.widgetWithText(TextFormField, 'Enter your password');
 
       await tester.enterText(emailField, 'test@example.com');
@@ -505,15 +510,26 @@ void main() {
         'auth_refresh_token': 'old_refresh_token',
       });
 
-      late http.BaseRequest capturedRequest;
+      late http.Request capturedRequest;
       final fakeClient = _FakeHttpClient((request) async {
-        capturedRequest = request;
+        capturedRequest = request as http.Request;
         return http.Response(
           jsonEncode({
             "success": true,
             "message": "Access token refreshed successfully.",
-            "accessToken": "new_access_token_12345",
-            "refreshToken": "new_refresh_token_67890"
+            "data": {
+              "access_token": "new_access_token_12345",
+              "refresh_token": "new_refresh_token_67890",
+              "user": {
+                "id": 18,
+                "name": "Tushar Paneliya",
+                "email": "paneliyatechnology@gmail.com",
+                "role": "RECEPTIONIST",
+                "hotel_id": 2,
+                "is_active": true,
+                "is_disabled": false
+              }
+            }
           }),
           200,
           headers: {'content-type': 'application/json'},
@@ -526,13 +542,17 @@ void main() {
       expect(response.success, isTrue);
       expect(response.accessToken, equals('new_access_token_12345'));
       expect(response.refreshToken, equals('new_refresh_token_67890'));
+      expect(response.user?.role, equals('RECEPTIONIST'));
 
-      // Check request details
-      expect(capturedRequest.url.toString(), equals('https://hotelmanagementbackend-dev.up.railway.app/api/v1/auth/refresh-token'));
-      expect(capturedRequest.headers['Cookie'], contains('refreshToken=old_refresh_token'));
-      expect(capturedRequest.headers['Cookie'], contains('token=old_access_token'));
+      expect(capturedRequest.url.toString(), equals(ApiConstants.refreshTokenUrl));
+      expect(capturedRequest.headers['Content-Type'], 'application/json');
+      expect(capturedRequest.headers['Accept'], 'application/json');
+      expect(
+        capturedRequest.headers['Cookie'],
+        'accessToken=old_access_token; refreshToken=old_refresh_token',
+      );
+      expect(jsonDecode(capturedRequest.body), {'refresh_token': 'old_refresh_token'});
 
-      // Check updated SharedPreferences
       expect(await repo.getSavedToken(), equals('new_access_token_12345'));
       expect(await repo.getSavedRefreshToken(), equals('new_refresh_token_67890'));
     });
@@ -636,6 +656,205 @@ void main() {
       expect(bloc.state.token, equals('bloc_new_token'));
 
       await bloc.close();
+    });
+
+    test('parses new backend response with nested data.user and integer id', () {
+      final newApiResponseJson = jsonDecode('''
+{
+    "success": true,
+    "message": "Login successful.",
+    "data": {
+        "accessToken": "new_railway_jwt_access_token",
+        "refreshToken": "new_railway_jwt_refresh_token",
+        "user": {
+            "id": 3,
+            "name": "Niraj Vekariya",
+            "email": "nirajvekariya2209@gmail.com",
+            "role": "HOTEL_ADMIN",
+            "phone": "9426886960",
+            "mustChangePassword": false
+        }
+    }
+}
+''') as Map<String, dynamic>;
+
+      final responseModel = LoginResponseModel.fromJson(newApiResponseJson);
+
+      expect(responseModel.success, isTrue);
+      expect(responseModel.message, equals('Login successful.'));
+      expect(responseModel.accessToken, equals('new_railway_jwt_access_token'));
+      expect(responseModel.refreshToken, equals('new_railway_jwt_refresh_token'));
+
+      final snakeCaseLogin = LoginResponseModel.fromJson({
+        'success': true,
+        'message': 'Login successful.',
+        'data': {
+          'access_token': 'snake_access_token',
+          'refresh_token': 'snake_refresh_token',
+          'user': {
+            'id': 3,
+            'name': 'Niraj Vekariya',
+            'email': 'nirajvekariya2209@gmail.com',
+            'role': 'HOTEL_ADMIN',
+          },
+        },
+      });
+      expect(snakeCaseLogin.accessToken, 'snake_access_token');
+      expect(snakeCaseLogin.refreshToken, 'snake_refresh_token');
+      expect(snakeCaseLogin.data?.id, '3');
+
+      final snakeCaseRefresh = RefreshTokenResponseModel.fromJson({
+        'success': true,
+        'message': 'Access token refreshed successfully.',
+        'data': {
+          'access_token': 'refreshed_access_token',
+          'refresh_token': 'refreshed_refresh_token',
+        },
+      });
+      expect(snakeCaseRefresh.accessToken, 'refreshed_access_token');
+      expect(snakeCaseRefresh.refreshToken, 'refreshed_refresh_token');
+      expect(responseModel.data, isNotNull);
+
+      final user = responseModel.data!;
+      expect(user.id, equals('3'));
+      expect(user.name, equals('Niraj Vekariya'));
+      expect(user.email, equals('nirajvekariya2209@gmail.com'));
+      expect(user.role, equals('HOTEL_ADMIN'));
+      expect(user.isHotelAdmin, isTrue);
+      expect(user.isReceptionist, isFalse);
+      expect(user.effectiveRole, equals('HOTEL_ADMIN'));
+    });
+
+    test('role routing distinguishes between HOTEL_ADMIN and RECEPTIONIST', () {
+      final adminUserJson = {
+        'id': 3,
+        'name': 'Niraj Vekariya',
+        'email': 'niraj@gmail.com',
+        'role': 'HOTEL_ADMIN',
+      };
+      final receptionistUserJson = {
+        'id': 4,
+        'name': 'Pooja Sharma',
+        'email': 'pooja@gmail.com',
+        'role': 'RECEPTIONIST',
+      };
+
+      final adminUser = AuthUserModel.fromJson(adminUserJson);
+      final receptionistUser = AuthUserModel.fromJson(receptionistUserJson);
+
+      expect(adminUser.isHotelAdmin, isTrue);
+      expect(adminUser.isReceptionist, isFalse);
+      expect(adminUser.effectiveRole, equals('HOTEL_ADMIN'));
+
+      expect(receptionistUser.isHotelAdmin, isFalse);
+      expect(receptionistUser.isReceptionist, isTrue);
+      expect(receptionistUser.effectiveRole, equals('RECEPTIONIST'));
+    });
+
+    test('AuthRepository forgotPassword calls API endpoint and returns message', () async {
+      late http.BaseRequest capturedRequest;
+      final fakeClient = _FakeHttpClient((request) async {
+        capturedRequest = request;
+        return http.Response(
+          jsonEncode({
+            "success": true,
+            "message": "A password reset link has been sent to your email. Please check your inbox or spam folder.",
+            "data": {
+              "email": "nirajvekariya2209@gmail.com"
+            }
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final repo = AuthRepository(client: fakeClient);
+      final message = await repo.forgotPassword(email: 'nirajvekariya2209@gmail.com');
+
+      expect(capturedRequest.url.toString(), equals(ApiConstants.forgotPasswordUrl));
+      expect(message, contains('password reset link has been sent to your email'));
+    });
+
+    test('AuthBloc handles ForgotPasswordRequested and emits forgotPasswordSuccess', () async {
+      final fakeClient = _FakeHttpClient((request) async {
+        return http.Response(
+          jsonEncode({
+            "success": true,
+            "message": "A password reset link has been sent to your email. Please check your inbox or spam folder.",
+            "data": {
+              "email": "nirajvekariya2209@gmail.com"
+            }
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final repo = AuthRepository(client: fakeClient);
+      final bloc = AuthBloc(repository: repo);
+
+      bloc.add(const ForgotPasswordRequested(email: 'nirajvekariya2209@gmail.com'));
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      expect(bloc.state.status, equals(AuthStatus.forgotPasswordSuccess));
+      expect(bloc.state.successMessage, contains('password reset link has been sent'));
+
+      await bloc.close();
+    });
+
+    testWidgets('LoginScreen displays SnackBar when Forgot Password is tapped with email', (tester) async {
+      final fakeClient = _FakeHttpClient((request) async {
+        return http.Response(
+          jsonEncode({
+            "success": true,
+            "message": "A password reset link has been sent to your email. Please check your inbox or spam folder.",
+            "data": {
+              "email": "nirajvekariya2209@gmail.com"
+            }
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final repo = AuthRepository(client: fakeClient);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: LoginScreen(authRepository: repo),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Enter email
+      final emailFinder = find.widgetWithText(TextFormField, 'Enter your email');
+      await tester.enterText(emailFinder, 'nirajvekariya2209@gmail.com');
+      await tester.pump();
+
+      // Tap Forgot Password - navigates to dedicated ForgotPasswordScreen
+      final forgotBtn = find.text('Forgot Password?');
+      await tester.tap(forgotBtn);
+      await tester.pumpAndSettle();
+
+      // Verify ForgotPasswordScreen is displayed with Sign In back option
+      expect(find.byType(ForgotPasswordScreen), findsOneWidget);
+      expect(find.text('Sign In'), findsOneWidget);
+
+      // Tap Send Password Reset Link button
+      final sendBtn = find.text('Send Password Reset Link');
+      await tester.tap(sendBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      // Verify SnackBar is shown with message
+      expect(find.byType(SnackBar), findsOneWidget);
+      expect(find.textContaining('password reset link has been sent to your email'), findsOneWidget);
+
+      // Verify auto navigation back to LoginScreen after API success
+      await tester.pump(const Duration(milliseconds: 1300));
+      await tester.pumpAndSettle();
+      expect(find.byType(ForgotPasswordScreen), findsNothing);
+      expect(find.byType(LoginScreen), findsOneWidget);
     });
   });
 }

@@ -1,17 +1,16 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../../core/constants/api_constants.dart';
 import '../models/auth_user_model.dart';
 import '../models/login_response_model.dart';
 import '../models/refresh_token_response_model.dart';
 
 class AuthRepository {
-  static const String baseUrl =
-      'https://hotelmanagementbackend-dev.up.railway.app/api/v1/auth/login';
-  static const String refreshUrl =
-      'https://hotelmanagementbackend-dev.up.railway.app/api/v1/auth/refresh-token';
-  static const String meUrl =
-      'https://hotelmanagementbackend-dev.up.railway.app/api/v1/auth/me';
+  static const String baseUrl = ApiConstants.loginUrl;
+  static const String refreshUrl = ApiConstants.refreshTokenUrl;
+  static const String forgotPasswordUrl = ApiConstants.forgotPasswordUrl;
+  static const String meUrl = ApiConstants.meUrl;
 
   static const String _tokenKey = 'auth_access_token';
   static const String _refreshTokenKey = 'auth_refresh_token';
@@ -20,6 +19,7 @@ class AuthRepository {
   static const String _rememberStationKey = 'auth_remember_station';
 
   final http.Client _client;
+  Future<RefreshTokenResponseModel>? _ongoingRefresh;
 
   AuthRepository({http.Client? client}) : _client = client ?? http.Client();
 
@@ -45,8 +45,16 @@ class AuthRepository {
         body: body,
       );
 
-      final Map<String, dynamic> jsonResponse =
-          jsonDecode(response.body) as Map<String, dynamic>;
+      Map<String, dynamic> jsonResponse = {};
+      try {
+        jsonResponse = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {}
+
+      final extractedMessage = (jsonResponse['message'] ??
+              jsonResponse['error'] ??
+              jsonResponse['msg'] ??
+              jsonResponse['detail'])
+          ?.toString();
 
       final loginResponse = LoginResponseModel.fromJson(jsonResponse);
 
@@ -57,9 +65,11 @@ class AuthRepository {
         await _saveSession(loginResponse);
         return loginResponse;
       } else {
-        final errorMsg = loginResponse.message.isNotEmpty
-            ? loginResponse.message
-            : 'Login failed. Please check your credentials.';
+        final errorMsg = (extractedMessage != null && extractedMessage.isNotEmpty)
+            ? extractedMessage
+            : (loginResponse.message.isNotEmpty
+                ? loginResponse.message
+                : 'Login failed (Status: ${response.statusCode}). Please check your credentials.');
         throw Exception(errorMsg);
       }
     } on FormatException {
@@ -70,8 +80,66 @@ class AuthRepository {
     }
   }
 
-  /// Calls the refresh-token API and saves new tokens to SharedPreferences
-  Future<RefreshTokenResponseModel> refreshToken({String? providedRefreshToken}) async {
+  /// Executes forgot-password API request
+  Future<String> forgotPassword({required String email}) async {
+    try {
+      final url = Uri.parse(forgotPasswordUrl);
+      final body = jsonEncode({
+        'email': email.trim(),
+      });
+
+      final token = await getSavedToken();
+      final refreshToken = await getSavedRefreshToken();
+
+      final headers = ApiConstants.defaultHeaders(
+        token: token,
+        refreshToken: refreshToken,
+      );
+
+      final response = await _client.post(
+        url,
+        headers: headers,
+        body: body,
+      );
+
+      final Map<String, dynamic> jsonResponse =
+          jsonDecode(response.body) as Map<String, dynamic>;
+
+      final success = jsonResponse['success'] as bool? ?? false;
+      final message = jsonResponse['message'] as String? ?? '';
+
+      if (response.statusCode >= 200 && response.statusCode < 300 && success) {
+        return message.isNotEmpty
+            ? message
+            : 'A password reset link has been sent to your email. Please check your inbox or spam folder.';
+      } else {
+        throw Exception(message.isNotEmpty
+            ? message
+            : 'Failed to send password reset link. Please check the email.');
+      }
+    } on FormatException {
+      throw Exception('Invalid response received from hotel server.');
+    } catch (e) {
+      if (e is Exception) rethrow;
+      throw Exception('Connection error: $e');
+    }
+  }
+
+  /// Calls POST /api/v1/auth/refresh-token and saves the new tokens.
+  /// Concurrent callers share one in-flight refresh.
+  Future<RefreshTokenResponseModel> refreshToken({String? providedRefreshToken}) {
+    if (providedRefreshToken == null && _ongoingRefresh != null) {
+      return _ongoingRefresh!;
+    }
+    late final Future<RefreshTokenResponseModel> tracked;
+    tracked = _performRefresh(providedRefreshToken).whenComplete(() {
+      if (identical(_ongoingRefresh, tracked)) _ongoingRefresh = null;
+    });
+    if (providedRefreshToken == null) _ongoingRefresh = tracked;
+    return tracked;
+  }
+
+  Future<RefreshTokenResponseModel> _performRefresh(String? providedRefreshToken) async {
     try {
       final tokenToUse = providedRefreshToken ?? await getSavedRefreshToken();
       if (tokenToUse == null || tokenToUse.isEmpty) {
@@ -86,17 +154,15 @@ class AuthRepository {
         'Accept': 'application/json',
       };
 
-      // Set Cookie header matching Postman spec:
-      // Cookie: refreshToken=...; token=...
       final cookieParts = <String>[];
-      cookieParts.add('refreshToken=$tokenToUse');
       if (currentAccessToken != null && currentAccessToken.isNotEmpty) {
-        cookieParts.add('token=$currentAccessToken');
+        cookieParts.add('accessToken=$currentAccessToken');
       }
+      cookieParts.add('refreshToken=$tokenToUse');
       headers['Cookie'] = cookieParts.join('; ');
 
       final body = jsonEncode({
-        'refreshToken': tokenToUse,
+        'refresh_token': tokenToUse,
       });
 
       final response = await _client.post(
@@ -145,6 +211,9 @@ class AuthRepository {
       final newRefreshToken = refreshModel.refreshToken;
       if (newRefreshToken != null && newRefreshToken.isNotEmpty) {
         await prefs.setString(_refreshTokenKey, newRefreshToken);
+      }
+      if (refreshModel.user != null) {
+        await prefs.setString(_userDataKey, jsonEncode(refreshModel.user!.toJson()));
       }
 
       // Also update saved LoginResponseModel in SharedPreferences
@@ -312,7 +381,9 @@ class AuthRepository {
         headers['Authorization'] = 'Bearer $token';
       }
       final cookieParts = <String>[];
-      if (token != null && token.isNotEmpty) cookieParts.add('token=$token');
+      if (token != null && token.isNotEmpty) {
+        cookieParts.add('accessToken=$token');
+      }
       if (refreshToken != null && refreshToken.isNotEmpty) {
         cookieParts.add('refreshToken=$refreshToken');
       }
@@ -328,8 +399,12 @@ class AuthRepository {
         final Map<String, dynamic> jsonResponse =
             jsonDecode(response.body) as Map<String, dynamic>;
         if (jsonResponse['success'] == true && jsonResponse['data'] != null) {
-          final user = AuthUserModel.fromJson(
-              jsonResponse['data'] as Map<String, dynamic>);
+          final data = jsonResponse['data'];
+          final userMap = (data is Map<String, dynamic> &&
+                  data['user'] is Map<String, dynamic>)
+              ? data['user'] as Map<String, dynamic>
+              : (data as Map<String, dynamic>);
+          final user = AuthUserModel.fromJson(userMap);
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_userDataKey, jsonEncode(user.toJson()));
           return user;

@@ -26,17 +26,25 @@ class StaffMemberModel {
   bool get isActive => status.toUpperCase() == 'ACTIVE';
 
   factory StaffMemberModel.fromJson(Map<String, dynamic> json) {
+    final activeFlag = json['is_active'] ?? json['isActive'];
+    final rawStatus = json['status']?.toString();
+    final status = (rawStatus != null && rawStatus.isNotEmpty)
+        ? rawStatus
+        : (activeFlag is bool ? (activeFlag ? 'ACTIVE' : 'INACTIVE') : 'ACTIVE');
+
     return StaffMemberModel(
-      id: json['_id'] as String? ?? json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      email: json['email'] as String? ?? '',
-      phone: json['phone'] as String? ?? '',
-      role: json['role'] as String? ?? 'RECEPTIONIST',
-      employeeId: json['employeeId'] as String? ?? '',
-      status: json['status'] as String? ?? 'ACTIVE',
-      shift: json['shift'] as String? ?? 'Morning (07:00 - 15:00)',
-      mustChangePassword: json['mustChangePassword'] as bool? ?? false,
-      failedLoginAttempts: (json['failedLoginAttempts'] as num?)?.toInt() ?? 0,
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      name: json['name']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      phone: (json['phone'] ?? json['mobile'] ?? '').toString(),
+      role: json['role']?.toString() ?? 'RECEPTIONIST',
+      employeeId: (json['employeeId'] ?? json['employee_id'] ?? '').toString(),
+      status: status,
+      shift: (json['shift'] ?? json['shift_name'] ?? 'Morning (07:00 - 15:00)').toString(),
+      mustChangePassword: json['mustChangePassword'] == true || json['must_change_password'] == true,
+      failedLoginAttempts: (json['failedLoginAttempts'] as num?)?.toInt() ??
+          (json['failed_login_attempts'] as num?)?.toInt() ??
+          0,
     );
   }
 

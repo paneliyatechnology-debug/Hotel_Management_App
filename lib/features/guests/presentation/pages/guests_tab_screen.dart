@@ -24,8 +24,7 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
   @override
   void initState() {
     super.initState();
-    // Load guests with status=CHECKED_OUT from /api/v1/receptionist/bookings
-    context.read<GuestsBloc>().add(const LoadGuestsEvent(status: 'CHECKED_OUT'));
+    context.read<GuestsBloc>().add(const LoadGuestsEvent());
   }
 
   @override
@@ -121,7 +120,7 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
               Expanded(
                 flex: 6,
                 child: state.selectedGuest != null
-                    ? GuestDetailsScreen(guest: state.selectedGuest!)
+                    ? GuestDetailsScreen(guest: state.selectedGuest!, isEmbedded: true)
                     : const Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -293,9 +292,16 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
     );
   }
 
+  void _clearFilters(BuildContext context) {
+    _searchController.clear();
+    context.read<GuestsBloc>().add(const ClearAllFiltersEvent());
+    setState(() {});
+  }
+
   Widget _buildSecondaryFilterBar(BuildContext context, GuestsState state) {
     final hasActiveDate = state.dateFilterOption != DateFilterOption.allTime;
-    final hasActiveFilters = state.activeFilterCount > 0;
+    final sheetFilterCount = state.advancedFilters.activeCount;
+    final hasSheetFilters = sheetFilterCount > 0;
 
     return Row(
       children: [
@@ -368,10 +374,10 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: hasActiveFilters ? AppColors.primarySurface : AppColors.neutral100,
+              color: hasSheetFilters ? AppColors.primarySurface : AppColors.neutral100,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: hasActiveFilters ? AppColors.primary : AppColors.borderSubtle,
+                color: hasSheetFilters ? AppColors.primary : AppColors.borderSubtle,
               ),
             ),
             child: Row(
@@ -380,15 +386,15 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
                 Icon(
                   Icons.tune_rounded,
                   size: 15,
-                  color: hasActiveFilters ? AppColors.primary : AppColors.neutral700,
+                  color: hasSheetFilters ? AppColors.primary : AppColors.neutral700,
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  hasActiveFilters ? 'Filters (${state.activeFilterCount})' : 'Filters',
+                  hasSheetFilters ? 'Filters ($sheetFilterCount)' : 'Filters',
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: hasActiveFilters ? FontWeight.w700 : FontWeight.w600,
-                    color: hasActiveFilters ? AppColors.primary : AppColors.neutral800,
+                    fontWeight: hasSheetFilters ? FontWeight.w700 : FontWeight.w600,
+                    color: hasSheetFilters ? AppColors.primary : AppColors.neutral800,
                   ),
                 ),
               ],
@@ -399,15 +405,22 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
         // RESET BUTTON IF ANY FILTERS ARE ACTIVE
         if (state.hasAnyFiltersActive) ...[
           const SizedBox(width: 6),
-          IconButton(
-            icon: const Icon(Icons.restart_alt_rounded, size: 20, color: AppColors.neutral600),
-            tooltip: 'Clear All Filters',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: () {
-              _searchController.clear();
-              context.read<GuestsBloc>().add(const ClearAllFiltersEvent());
-            },
+          TextButton(
+            onPressed: () => _clearFilters(context),
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 36),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Clear',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
+              ),
+            ),
           ),
         ],
       ],
@@ -423,7 +436,7 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
       return RefreshIndicator(
         color: AppColors.primary,
         onRefresh: () async {
-          context.read<GuestsBloc>().add(const RefreshGuestsEvent(status: 'CHECKED_OUT'));
+          context.read<GuestsBloc>().add(const RefreshGuestsEvent());
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -435,33 +448,54 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
       );
     }
 
-    return RefreshIndicator(
-      color: AppColors.primary,
-      onRefresh: () async {
-        context.read<GuestsBloc>().add(const RefreshGuestsEvent(status: 'CHECKED_OUT'));
+    final showLoader = state.loadingMore;
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 160) {
+          context.read<GuestsBloc>().add(const LoadMoreGuestsEvent());
+        }
+        return false;
       },
-      child: ListView.separated(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        itemCount: state.filteredGuests.length,
-        separatorBuilder: (_, _) => const SizedBox.shrink(),
-        itemBuilder: (context, index) {
-          final guest = state.filteredGuests[index];
-          return GuestCard(
-            guest: guest,
-            onTap: () {
-              if (isWideScreen) {
-                context.read<GuestsBloc>().add(SelectGuestEvent(guest));
-              } else {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => GuestDetailsScreen(guest: guest),
-                  ),
-                );
-              }
-            },
-          );
+      child: RefreshIndicator(
+        color: AppColors.primary,
+        onRefresh: () async {
+          context.read<GuestsBloc>().add(const RefreshGuestsEvent());
         },
+        child: ListView.separated(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          itemCount: state.filteredGuests.length + (showLoader ? 1 : 0),
+          separatorBuilder: (_, _) => const SizedBox.shrink(),
+          itemBuilder: (context, index) {
+            if (index >= state.filteredGuests.length) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                ),
+              );
+            }
+            final guest = state.filteredGuests[index];
+            return GuestCard(
+              guest: guest,
+              onTap: () {
+                if (isWideScreen) {
+                  context.read<GuestsBloc>().add(SelectGuestEvent(guest));
+                } else {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => GuestDetailsScreen(guest: guest),
+                    ),
+                  );
+                }
+              },
+            );
+          },
+        ),
       ),
     );
   }
@@ -519,10 +553,7 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
-              onPressed: () {
-                _searchController.clear();
-                context.read<GuestsBloc>().add(const ClearAllFiltersEvent());
-              },
+              onPressed: () => _clearFilters(context),
               child: const Text(
                 'Clear Filters',
                 style: TextStyle(

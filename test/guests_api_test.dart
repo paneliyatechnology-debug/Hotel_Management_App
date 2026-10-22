@@ -322,8 +322,12 @@ void main() {
 
     test('GuestsRepository calls API endpoint and returns parsed models with custom Client', () async {
       final mockClient = MockClient((request) async {
-        expect(request.url.path, equals('/api/v1/receptionist/bookings'));
-        expect(request.url.queryParameters['status'], equals('CHECKED_OUT'));
+        expect(request.url.path, equals('/api/v1/bookings'));
+        expect(request.url.queryParameters['page'], equals('1'));
+        expect(request.url.queryParameters['limit'], equals('10'));
+        expect(request.url.queryParameters.containsKey('status'), isFalse);
+        expect(request.url.queryParameters.containsKey('booking_status'), isFalse);
+        expect(request.url.queryParameters.containsKey('hotel_id'), isFalse);
         expect(request.method, equals('GET'));
         return http.Response(sampleGuestsApiResponse, 200, headers: {'content-type': 'application/json'});
       });

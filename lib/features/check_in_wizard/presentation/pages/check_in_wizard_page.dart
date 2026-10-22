@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/widgets/app_snackbar.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../dashboard/presentation/bloc/dashboard_bloc.dart';
@@ -28,6 +29,7 @@ class CheckInWizardPage extends StatefulWidget {
 }
 
 class _CheckInWizardPageState extends State<CheckInWizardPage> {
+  bool _checkInInFlight = false;
   final List<Map<String, dynamic>> _stepItems = [
     {'title': 'Guest', 'short': 'Guest', 'icon': Icons.person_pin_rounded},
     {'title': 'Stay', 'short': 'Stay', 'icon': Icons.hotel_rounded},
@@ -39,11 +41,14 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
     bool isValid = true;
     switch (state.currentStep) {
       case 0:
+        final phoneDigits = _guestMobileDigits(state.formData.contactPhone);
+        final proofCount = _guestProofCount(state.formData);
         if (state.formData.guestFullName.trim().isEmpty ||
-            state.formData.contactPhone.trim().isEmpty) {
+            phoneDigits.isEmpty ||
+            !RegExp(r'^[6-9]\d{9}$').hasMatch(phoneDigits) ||
+            proofCount < 1 ||
+            !state.formData.isSignatureCaptured) {
           isValid = false;
-        } else if (state.formData.idNumber.trim().isEmpty) {
-          state.formData.idNumber = 'PHOTO-VERIFIED';
         }
         break;
 
@@ -62,8 +67,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
         break;
 
       case 3:
-        if (state.formData.assignedKeycardNumber.isEmpty ||
-            !state.formData.agreeTermsAndSignature) {
+        if (!state.formData.agreeTermsAndSignature) {
           isValid = false;
         }
         break;
@@ -81,119 +85,22 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
     return true;
   }
 
-  void _autoFillDemoData(BuildContext context, CheckInState state) {
-    final updated = state.formData.copy();
-    updated.guestFullName = 'Niraj Vekariya';
-    updated.idType = 'Aadhaar Card';
-    updated.idNumber = '5421-9876-1234';
-    updated.nationality = 'Indian';
-    updated.isIdVerified = true;
-    updated.idFrontPhotoUrl = 'scanned_aadhaar.png';
-    updated.idBackPhotoUrl = 'scanned_aadhaar_back.png';
-
-    // Auto-fill attached companion for Couple / Family
-    if (updated.partyType == 'Family / Group' || updated.roomType.toLowerCase().contains('family')) {
-      updated.partyType = 'Family / Group';
-      updated.accompanyingGuests = [
-        AccompanyingGuest(
-          name: 'Pooja Vekariya',
-          relationship: 'Spouse',
-          age: '28',
-          idType: 'Aadhaar Card',
-          idNumber: '5421-9876-5678',
-          isIdVerified: true,
-          idPhotoUrl: 'scanned_aadhaar.png',
-          idBackPhotoUrl: 'scanned_aadhaar_back.png',
-        ),
-        AccompanyingGuest(
-          name: 'Aarav Vekariya',
-          relationship: 'Child',
-          age: '6',
-          idType: 'Aadhaar Card',
-          idNumber: '5421-9876-9012',
-          isIdVerified: true,
-          idPhotoUrl: 'scanned_aadhaar.png',
-          idBackPhotoUrl: 'scanned_aadhaar_back.png',
-        ),
-      ];
-      updated.numberOfGuests = 3;
-    } else if (updated.partyType == 'Couple (2 Guests)' || updated.roomType.toLowerCase().contains('couple')) {
-      updated.partyType = 'Couple (2 Guests)';
-      updated.accompanyingGuests = [
-        AccompanyingGuest(
-          name: 'Pooja Vekariya',
-          relationship: 'Spouse',
-          age: '28',
-          idType: 'Aadhaar Card',
-          idNumber: '5421-9876-5678',
-          isIdVerified: true,
-          idPhotoUrl: 'scanned_aadhaar.png',
-          idBackPhotoUrl: 'scanned_aadhaar_back.png',
-        ),
-      ];
-      updated.numberOfGuests = 2;
-    } else if (updated.accompanyingGuests.isNotEmpty) {
-      // Auto-fill existing accompanying guests for all room categories
-      for (int i = 0; i < updated.accompanyingGuests.length; i++) {
-        final g = updated.accompanyingGuests[i];
-        if (g.name.isEmpty) g.name = i == 0 ? 'Pooja Vekariya' : 'Aarav Vekariya';
-        if (g.idNumber.isEmpty) g.idNumber = i == 0 ? '5421-9876-5678' : '5421-9876-9012';
-        g.isIdVerified = true;
-        g.idPhotoUrl = 'scanned_aadhaar.png';
-        g.idBackPhotoUrl = 'scanned_aadhaar_back.png';
-      }
-      updated.numberOfGuests = 1 + updated.accompanyingGuests.length;
-    } else {
-      // Solo guest
-      updated.accompanyingGuests = [];
-      updated.numberOfGuests = 1;
+  String _guestMobileDigits(String phone) {
+    var digits = phone.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 10 && digits.startsWith('91')) {
+      digits = digits.substring(digits.length - 10);
     }
+    return digits;
+  }
 
-    updated.contactPhone = '+91 98765 43210';
-    updated.email = 'niraj.v@example.com';
-    updated.residentialAddress = '702, Skyline Residency, Ring Road';
-    updated.city = 'Surat';
-    updated.state = 'Gujarat';
-    updated.pincode = '395007';
-    updated.gstNumber = '24AAACV1234F1Z5';
-    updated.paymentMode = 'UPI';
-    updated.advancePaid = updated.grandTotal;
-    updated.assignedKeycardNumber = 'KC-101';
-    updated.agreeTermsAndSignature = true;
-    updated.isSignatureCaptured = true;
-    updated.signaturePoints = [
-      const Offset(40, 70),
-      const Offset(55, 45),
-      const Offset(70, 75),
-      const Offset(85, 50),
-      const Offset(110, 65),
-      null,
-      const Offset(35, 85),
-      const Offset(150, 82),
-    ];
-
-    context.read<CheckInBloc>().add(UpdateFormDataEvent(updated));
-
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.flash_on_rounded, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Demo primary & attached guest identities auto-filled!',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-        duration: Duration(milliseconds: 1000),
-      ),
-    );
+  int _guestProofCount(CheckInFormData formData) {
+    final proofs = <String>{
+      for (final path in formData.idPhotos)
+        if (path.trim().isNotEmpty) path.trim(),
+      if ((formData.idFrontPhotoUrl ?? '').trim().isNotEmpty) formData.idFrontPhotoUrl!.trim(),
+      if ((formData.idBackPhotoUrl ?? '').trim().isNotEmpty) formData.idBackPhotoUrl!.trim(),
+    };
+    return proofs.length;
   }
 
   @override
@@ -201,7 +108,11 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
     final isCompact = MediaQuery.of(context).size.width < 650;
 
     return BlocConsumer<CheckInBloc, CheckInState>(
+      listenWhen: (previous, current) => previous.status != current.status,
       listener: (context, state) {
+        if (state.status == CheckInStatus.error && _checkInInFlight) {
+          setState(() => _checkInInFlight = false);
+        }
         if (state.status == CheckInStatus.success) {
           // 1. Refresh dashboard data so room status is updated to occupied
           context.read<DashboardBloc>().add(RefreshDashboardDataEvent());
@@ -252,7 +163,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                     : 'KC-101',
               );
 
-          // 2. Show Success Pop-Up dialog with Print Folio PDF & Send WhatsApp actions
+          // 2. Show Success Pop-Up dialog with Send WhatsApp and Done actions
           showDialog(
             context: context,
             barrierDismissible: false,
@@ -276,11 +187,10 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
             ),
           );
         } else if (state.status == CheckInStatus.error) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(state.errorMessage ?? 'Check-in failed'),
-              backgroundColor: AppColors.statusMaintenance,
-            ),
+          AppSnackBar.showError(
+            context,
+            state.errorMessage ?? (state.formData.isEditingBooking ? 'Could not update this booking.' : 'Check-in failed'),
+            title: state.formData.isEditingBooking ? 'Update failed' : 'Check-in failed',
           );
         }
       },
@@ -311,74 +221,35 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                 ),
                 child: Column(
                   children: [
-                    // Stepper Top Bar: Step Indicator & Quick Fill Action
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Expanded(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primarySurface,
-                                  borderRadius: BorderRadius.circular(5),
-                                  border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.3)),
-                                ),
-                                child: Text(
-                                  'STEP ${state.currentStep + 1} OF ${_stepItems.length}',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.primaryDark,
-                                    letterSpacing: 0.3,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  _stepItems[state.currentStep]['title'] as String,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.inter(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ),
-                            ],
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                          decoration: BoxDecoration(
+                            color: AppColors.primarySurface,
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(color: AppColors.primaryLight.withValues(alpha: 0.3)),
+                          ),
+                          child: Text(
+                            'STEP ${state.currentStep + 1} OF ${_stepItems.length}',
+                            style: GoogleFonts.inter(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primaryDark,
+                              letterSpacing: 0.3,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 6),
-
-                        // Quick Fill Action Pill
-                        InkWell(
-                          onTap: () => _autoFillDemoData(context, state),
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF3C7),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFFDE68A)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.flash_on_rounded, size: 12, color: Color(0xFFD97706)),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'Quick Fill',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: const Color(0xFF92400E),
-                                  ),
-                                ),
-                              ],
+                        Flexible(
+                          child: Text(
+                            _stepItems[state.currentStep]['title'] as String,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary,
                             ),
                           ),
                         ),
@@ -628,10 +499,12 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                       ),
                     )
                   : ElevatedButton(
-                      onPressed: state.status == CheckInStatus.submitting
+                      onPressed: _checkInInFlight || state.status == CheckInStatus.submitting
                           ? null
                           : () {
+                              if (_checkInInFlight) return;
                               if (_validateCurrentStep(context, state)) {
+                                setState(() => _checkInInFlight = true);
                                 context.read<CheckInBloc>().add(SubmitCheckInEvent());
                               }
                             },
@@ -649,7 +522,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (state.status == CheckInStatus.submitting)
+                            if (_checkInInFlight || state.status == CheckInStatus.submitting)
                               const SizedBox(
                                 width: 16,
                                 height: 16,
@@ -659,7 +532,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                               const Icon(Icons.check_circle_rounded, size: 17),
                             const SizedBox(width: 6),
                             Text(
-                              'Complete Express Check-In',
+                              state.formData.isEditingBooking ? 'Update booking' : 'Complete Express Check-In',
                               style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800),
                             ),
                           ],

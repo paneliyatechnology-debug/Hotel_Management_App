@@ -4,7 +4,6 @@ import 'package:my_own_pms_system/core/widgets/status_badge.dart';
 import 'package:my_own_pms_system/features/check_in_wizard/data/models/check_in_form_data.dart';
 import 'package:my_own_pms_system/features/check_in_wizard/presentation/widgets/check_in_success_dialog.dart';
 import 'package:my_own_pms_system/features/dashboard/data/models/guest_folio_model.dart';
-import 'package:my_own_pms_system/features/folios/presentation/widgets/guest_folio_details_dialog.dart';
 
 void main() {
   testWidgets('CheckInSuccessDialog renders correctly matching design', (WidgetTester tester) async {
@@ -75,7 +74,7 @@ void main() {
     expect(find.text('2026-10-09 to 2026-10-10'), findsOneWidget);
 
     // 3. Verify Buttons
-    expect(find.text('Print Folio PDF'), findsOneWidget);
+    expect(find.text('Print Folio PDF'), findsNothing);
     expect(find.text('Send WhatsApp'), findsOneWidget);
     expect(find.text('Done'), findsOneWidget);
 
@@ -83,10 +82,5 @@ void main() {
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(doneClicked, isTrue);
-
-    // 5. Test Print Folio PDF opens Folio Details Dialog
-    await tester.tap(find.text('Print Folio PDF'));
-    await tester.pumpAndSettle();
-    expect(find.byType(GuestFolioDetailsDialog), findsOneWidget);
   });
 }

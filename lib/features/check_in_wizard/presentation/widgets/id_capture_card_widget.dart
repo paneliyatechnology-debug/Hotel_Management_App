@@ -365,6 +365,49 @@ class IdCardButtonSlot extends StatelessWidget {
   }
 }
 
+bool isRemoteProofPath(String path) {
+  final value = path.trim().toLowerCase();
+  return value.startsWith('http://') || value.startsWith('https://');
+}
+
+bool isStoredProofFile(String path) {
+  if (path.trim().isEmpty || isRemoteProofPath(path)) return false;
+  return !kIsWeb &&
+      path != 'scanned_aadhaar.png' &&
+      path != 'scanned_aadhaar_back.png' &&
+      File(path).existsSync();
+}
+
+Widget proofImage(
+  String path, {
+  BoxFit fit = BoxFit.cover,
+  double? width,
+  double? height,
+}) {
+  if (isRemoteProofPath(path)) {
+    return Image.network(
+      path,
+      fit: fit,
+      width: width,
+      height: height,
+      errorBuilder: (_, _, _) => const ColoredBox(
+        color: Color(0xFF1E293B),
+        child: Icon(Icons.badge_rounded, color: Colors.white54, size: 24),
+      ),
+    );
+  }
+  return Image.file(
+    File(path),
+    fit: fit,
+    width: width,
+    height: height,
+    errorBuilder: (_, _, _) => const ColoredBox(
+      color: Color(0xFF1E293B),
+      child: Icon(Icons.badge_rounded, color: Colors.white54, size: 24),
+    ),
+  );
+}
+
 void showFullScreenImageModal(
   BuildContext context,
   String photoUrl,
@@ -372,10 +415,7 @@ void showFullScreenImageModal(
   String guestName, {
   bool isBackSide = false,
 }) {
-  final bool isRealFile = !kIsWeb &&
-      photoUrl != 'scanned_aadhaar.png' &&
-      photoUrl != 'scanned_aadhaar_back.png' &&
-      File(photoUrl).existsSync();
+  final bool isRealFile = isRemoteProofPath(photoUrl) || isStoredProofFile(photoUrl);
 
   final sideText = isBackSide ? 'Back Side' : 'Front Side';
 
@@ -444,8 +484,8 @@ void showFullScreenImageModal(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(10),
                 child: isRealFile
-                    ? Image.file(
-                        File(photoUrl),
+                    ? proofImage(
+                        photoUrl,
                         fit: BoxFit.contain,
                       )
                     : buildOriginalDocumentImageCard(

@@ -46,11 +46,15 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
 
     final initialNights =
         widget.formData.totalNights > 0 ? widget.formData.totalNights : 1;
-    final initialNet =
-        (initialRate * initialNights) - widget.formData.discountAmount;
+    final initialTaxable = (initialRate * initialNights) - widget.formData.discountAmount;
+    final taxable = initialTaxable > 0 ? initialTaxable : 0.0;
+    final gst = widget.formData.gstEnabled && widget.formData.gstRate > 0
+        ? taxable * widget.formData.gstRate / 100
+        : 0.0;
+    final initialFinal = taxable + gst;
     final initialAdvance = widget.formData.advancePaid > 0
         ? widget.formData.advancePaid
-        : (initialNet > 0 ? initialNet : 0.0);
+        : initialFinal;
 
     _advanceController =
         TextEditingController(text: initialAdvance.toInt().toString());
@@ -80,20 +84,39 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
       double.tryParse(_tariffRateController.text) ??
       widget.formData.pricePerNight;
 
-  double get _discount => double.tryParse(_discountController.text) ?? 0.0;
+  double get _discount {
+    final typed = double.tryParse(_discountController.text) ?? 0.0;
+    if (typed <= 0) return 0;
+    if (typed > _roomTotal) return _roomTotal;
+    return typed;
+  }
 
   double get _roomTotal => _nightlyRate * _nights;
 
-  double get _netPayable {
+  double get _taxable {
     final total = _roomTotal - _discount;
     return total > 0 ? total : 0.0;
   }
+
+  bool get _gstOn => widget.formData.gstEnabled && widget.formData.gstRate > 0;
+
+  double get _gstAmount => _gstOn ? _taxable * widget.formData.gstRate / 100 : 0;
+
+  double get _netPayable => _taxable + _gstAmount;
 
   double get _advancePaid => double.tryParse(_advanceController.text) ?? 0.0;
 
   double get _balanceDue => _netPayable - _advancePaid;
 
   void _onRateOrDiscountChanged() {
+    final typed = double.tryParse(_discountController.text) ?? 0.0;
+    if (typed > _roomTotal) {
+      final capped = _roomTotal.toInt().toString();
+      _discountController.value = TextEditingValue(
+        text: capped,
+        selection: TextSelection.collapsed(offset: capped.length),
+      );
+    }
     if (!_userEditedAdvance) {
       _advanceController.text = _netPayable.toInt().toString();
     }
@@ -250,6 +273,32 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
                   ),
                 ],
 
+                if (_gstOn) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'GST (${widget.formData.gstRate.toStringAsFixed(0)}%)',
+                          style: GoogleFonts.inter(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF334155),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        CurrencyFormatter.format(_gstAmount),
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+
                 const SizedBox(height: 8),
                 Divider(
                     height: 1,
@@ -257,12 +306,11 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
                     color: const Color(0xFFE2E8F0)),
                 const SizedBox(height: 8),
 
-                // Net Total Row
                 Row(
                   children: [
                     Expanded(
                       child: Text(
-                        'Net Payable Total',
+                        'Final Price',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,

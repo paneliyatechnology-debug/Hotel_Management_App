@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -7,6 +8,7 @@ import '../../data/repositories/auth_repository.dart';
 import '../bloc/auth_bloc.dart';
 import '../bloc/auth_event.dart';
 import '../bloc/auth_state.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatelessWidget {
   final AuthRepository? authRepository;
@@ -66,7 +68,7 @@ class _LoginScreenViewState extends State<_LoginScreenView> {
     // Dispatch LoginSubmitted event to AuthBloc
     context.read<AuthBloc>().add(
           LoginSubmitted(
-            email: _emailController.text.trim(),
+            email: _emailController.text.trim().toLowerCase(),
             password: _passwordController.text,
             rememberStation: _rememberStation,
           ),
@@ -74,131 +76,12 @@ class _LoginScreenViewState extends State<_LoginScreenView> {
   }
 
 
-  void _showForgotPasswordSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFCBD5E1),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primarySurface,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(
-                    Icons.admin_panel_settings_rounded,
-                    color: AppColors.primary,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Staff Password Reset',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        'Contact IT Admin or Duty Manager',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'For hotel security reasons, front desk terminal passwords can only be reset by the General Manager or IT Administrator.',
-              style: GoogleFonts.inter(
-                fontSize: 12.5,
-                color: AppColors.textSecondary,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'IT Helpdesk Hotline',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                        Text(
-                          '+91 98765 43210 • Ext 101',
-                          style: GoogleFonts.inter(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () => Navigator.of(ctx).pop(),
-                    child: Text(
-                      'Understood',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+  void _handleForgotPassword(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordScreen(
+          initialEmail: _emailController.text.trim().toLowerCase(),
+          authRepository: context.read<AuthBloc>().repository,
         ),
       ),
     );
@@ -244,6 +127,36 @@ class _LoginScreenViewState extends State<_LoginScreenView> {
                     child: Text(
                       'Welcome back, $staffName! $hotelName session active.',
                       style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        } else if (state.status == AuthStatus.forgotPasswordSuccess) {
+          final msg = state.successMessage != null && state.successMessage!.isNotEmpty
+              ? state.successMessage!
+              : 'A password reset link has been sent to your email. Please check your inbox or spam folder.';
+
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF0F766E),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 5),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              content: Row(
+                children: [
+                  const Icon(Icons.mark_email_read_rounded, color: Color(0xFF86EFAC), size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      msg,
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
                 ],
@@ -445,7 +358,7 @@ class _LoginScreenViewState extends State<_LoginScreenView> {
 
                         // 3. Email Input Field
                         Text(
-                          'Staff Email',
+                          'Email',
                           style: GoogleFonts.inter(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w700,
@@ -457,13 +370,20 @@ class _LoginScreenViewState extends State<_LoginScreenView> {
                           controller: _emailController,
                           enabled: !isLoading,
                           keyboardType: TextInputType.emailAddress,
+                          textCapitalization: TextCapitalization.none,
+                          autocorrect: false,
+                          inputFormatters: [
+                            TextInputFormatter.withFunction((oldValue, newValue) {
+                              return newValue.copyWith(text: newValue.text.toLowerCase());
+                            }),
+                          ],
                           style: GoogleFonts.inter(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
                             color: const Color(0xFF0F172A),
                           ),
                           decoration: InputDecoration(
-                            hintText: 'Enter your staff email',
+                            hintText: 'Enter your email',
                             hintStyle: GoogleFonts.inter(
                               fontSize: 13,
                               color: const Color(0xFF94A3B8),
@@ -491,7 +411,7 @@ class _LoginScreenViewState extends State<_LoginScreenView> {
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Staff email cannot be empty';
+                              return 'Email cannot be empty';
                             }
                             if (!value.contains('@')) {
                               return 'Enter a valid email address';
@@ -515,6 +435,7 @@ class _LoginScreenViewState extends State<_LoginScreenView> {
                           controller: _passwordController,
                           enabled: !isLoading,
                           obscureText: _obscurePassword,
+                          keyboardType: TextInputType.emailAddress,
                           style: GoogleFonts.inter(
                             fontSize: 13.5,
                             fontWeight: FontWeight.w600,
@@ -619,7 +540,7 @@ class _LoginScreenViewState extends State<_LoginScreenView> {
                               ),
                             ),
                             TextButton(
-                              onPressed: () => _showForgotPasswordSheet(context),
+                              onPressed: () => _handleForgotPassword(context),
                               style: TextButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(horizontal: 4),
                                 visualDensity: VisualDensity.compact,
@@ -698,40 +619,7 @@ class _LoginScreenViewState extends State<_LoginScreenView> {
                                   ),
                           ),
                         ),
-                        const SizedBox(height: 28),
-
-                        // 7. Footer Security Badge
-                        Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.shield_outlined, size: 14, color: Color(0xFF0F766E)),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    '256-Bit SSL Encrypted Session • Hotel PMS v2026.4',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: GoogleFonts.inter(
-                                      fontSize: 10.5,
-                                      color: const Color(0xFF475569),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
+                        const SizedBox(height: 16),
                       ],
                     ),
                   ),

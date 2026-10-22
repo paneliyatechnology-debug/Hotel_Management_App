@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/app_colors.dart';
@@ -31,6 +32,7 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
   late TextEditingController _idNumberController;
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
+  late TextEditingController _addressController;
   late TextEditingController _secondGuestNameController;
   late TextEditingController _secondGuestPhoneController;
   String? _primaryIdPhotoUrl;
@@ -53,6 +55,7 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     _idNumberController = TextEditingController(text: widget.formData.idNumber);
     _phoneController = TextEditingController(text: widget.formData.contactPhone);
     _emailController = TextEditingController(text: widget.formData.email);
+    _addressController = TextEditingController(text: widget.formData.residentialAddress);
     _secondGuestNameController = TextEditingController(text: widget.formData.secondGuestName ?? '');
     _secondGuestPhoneController = TextEditingController(text: widget.formData.secondGuestPhone ?? '');
     _primaryIdPhotoUrl = widget.formData.idFrontPhotoUrl;
@@ -87,6 +90,9 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     if (widget.formData.email != _emailController.text) {
       _emailController.text = widget.formData.email;
     }
+    if (widget.formData.residentialAddress != _addressController.text) {
+      _addressController.text = widget.formData.residentialAddress;
+    }
     if ((widget.formData.secondGuestName ?? '') != _secondGuestNameController.text) {
       _secondGuestNameController.text = widget.formData.secondGuestName ?? '';
     }
@@ -120,6 +126,7 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     _idNumberController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
+    _addressController.dispose();
     _secondGuestNameController.dispose();
     _secondGuestPhoneController.dispose();
     super.dispose();
@@ -134,9 +141,9 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
         : 'PHOTO-VERIFIED';
     updated.contactPhone = _phoneController.text;
     updated.email = _emailController.text;
-    updated.secondGuestName = _secondGuestNameController.text.trim().isNotEmpty
-        ? _secondGuestNameController.text.trim()
-        : null;
+    updated.residentialAddress = _addressController.text;
+    final typedGuestName = _secondGuestNameController.text;
+    updated.secondGuestName = typedGuestName.trim().isEmpty ? null : typedGuestName;
     updated.secondGuestPhone = _secondGuestPhoneController.text.trim().isNotEmpty
         ? _secondGuestPhoneController.text.trim()
         : null;
@@ -145,8 +152,245 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     updated.idPhotos = List<String>.from(_idPhotos);
     updated.isIdVerified = _isIdVerified || _idPhotos.isNotEmpty || _primaryIdPhotoUrl != null;
     updated.signaturePoints = List.from(widget.formData.signaturePoints);
+    updated.signaturePhotoPath = widget.formData.signaturePhotoPath;
+    updated.extraSignatures = widget.formData.extraSignatures.map((signature) => signature.copy()).toList();
     updated.isSignatureCaptured = widget.formData.isSignatureCaptured;
     widget.onDataChanged(updated);
+  }
+
+  Future<void> _addExtraSignature() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Add Signature',
+                  style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(sheetContext, 'camera'),
+                  icon: const Icon(Icons.photo_camera_rounded, size: 16),
+                  label: Text('Capture from camera', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0F766E),
+                    side: const BorderSide(color: Color(0xFF99F6E4)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(sheetContext, 'pad'),
+                  icon: const Icon(Icons.draw_rounded, size: 16),
+                  label: Text('Digital signature', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0F766E),
+                    side: const BorderSide(color: Color(0xFF99F6E4)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'camera') {
+      await _captureExtraSignature();
+    } else {
+      await _drawExtraSignature();
+    }
+  }
+
+  Future<void> _captureExtraSignature() async {
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.camera,
+        preferredCameraDevice: CameraDevice.rear,
+        maxWidth: 1600,
+        maxHeight: 900,
+        imageQuality: 90,
+      );
+      if (file == null || !mounted) return;
+      _keepSignature(photoPath: file.path);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not open camera: $e'),
+          backgroundColor: const Color(0xFFDC2626),
+        ),
+      );
+    }
+  }
+
+  Future<void> _drawExtraSignature() async {
+    final points = await showDialog<List<Offset?>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return SignatureCaptureDialog(
+          signerName: _nameController.text.trim().isNotEmpty ? _nameController.text.trim() : 'Guest',
+          title: 'Signature ${_signatureCount + 1}',
+        );
+      },
+    );
+    if (!mounted || points == null || !points.any((point) => point != null)) return;
+    _keepSignature(points: points);
+  }
+
+  bool _sameSignature(GuestSignature a, GuestSignature b) {
+    final aPhoto = a.photoPath?.trim() ?? '';
+    final bPhoto = b.photoPath?.trim() ?? '';
+    if (aPhoto.isNotEmpty || bPhoto.isNotEmpty) return aPhoto == bPhoto && aPhoto.isNotEmpty;
+    if (a.points.length != b.points.length) return false;
+    for (var i = 0; i < a.points.length; i++) {
+      if (a.points[i] != b.points[i]) return false;
+    }
+    return a.isCaptured && b.isCaptured;
+  }
+
+  GuestSignature get _primarySignature => GuestSignature(
+        photoPath: widget.formData.signaturePhotoPath,
+        points: List<Offset?>.from(widget.formData.signaturePoints),
+      );
+
+  void _keepSignature({String? photoPath, List<Offset?> points = const []}) {
+    final incoming = GuestSignature(
+      photoPath: photoPath,
+      points: List<Offset?>.from(points),
+    );
+    if (!incoming.isCaptured) return;
+    final stored = <GuestSignature>[
+      if (_primarySignature.isCaptured) _primarySignature,
+      ...widget.formData.extraSignatures,
+    ];
+    if (stored.any((signature) => _sameSignature(signature, incoming))) return;
+    setState(() {
+      if (!widget.formData.isSignatureCaptured) {
+        widget.formData.signaturePhotoPath = incoming.photoPath;
+        widget.formData.signaturePoints = List<Offset?>.from(incoming.points);
+      } else {
+        widget.formData.extraSignatures.add(incoming);
+      }
+      widget.formData.isSignatureCaptured = true;
+    });
+    _notify();
+  }
+
+  void _clearPrimarySignature() {
+    setState(() {
+      if (widget.formData.extraSignatures.isNotEmpty) {
+        final next = widget.formData.extraSignatures.removeAt(0);
+        widget.formData.signaturePhotoPath = next.photoPath;
+        widget.formData.signaturePoints = List<Offset?>.from(next.points);
+        widget.formData.isSignatureCaptured = true;
+      } else {
+        widget.formData.signaturePoints = <Offset?>[];
+        widget.formData.signaturePhotoPath = null;
+        widget.formData.isSignatureCaptured = false;
+      }
+    });
+    _notify();
+  }
+
+  void _removeListedSignature(int index) {
+    if (widget.formData.isSignatureCaptured && index == 0) {
+      _clearPrimarySignature();
+      return;
+    }
+    final extraIndex = widget.formData.isSignatureCaptured ? index - 1 : index;
+    if (extraIndex < 0 || extraIndex >= widget.formData.extraSignatures.length) return;
+    setState(() {
+      widget.formData.extraSignatures.removeAt(extraIndex);
+    });
+    _notify();
+  }
+
+  int get _signatureCount {
+    final primary = widget.formData.isSignatureCaptured ? 1 : 0;
+    return primary + widget.formData.extraSignatures.where((signature) => signature.isCaptured).length;
+  }
+
+  Widget _signaturePreview(String? photoPath, List<Offset?> points) {
+    final photo = photoPath?.trim() ?? '';
+    if (photo.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: proofImage(photo, width: 84, height: 48, fit: BoxFit.cover),
+      );
+    }
+    return Container(
+      width: 84,
+      height: 48,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: CustomPaint(painter: _MiniSignaturePainter(points)),
+    );
+  }
+
+  Widget _listedSignature(int index, {required String? photoPath, required List<Offset?> points}) {
+    final isPhoto = photoPath != null && photoPath.trim().isNotEmpty;
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          _signaturePreview(photoPath, points),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Signature ${index + 1} · ${isPhoto ? 'Camera' : 'Digital'}',
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF0F172A)),
+            ),
+          ),
+          IconButton(
+            key: ValueKey('remove_listed_signature_$index'),
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _removeListedSignature(index),
+            icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFFDC2626)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _allSignatureRows() {
+    final rows = <Widget>[];
+    var index = 0;
+    if (widget.formData.isSignatureCaptured) {
+      rows.add(_listedSignature(
+        index,
+        photoPath: widget.formData.signaturePhotoPath,
+        points: widget.formData.signaturePoints,
+      ));
+      index++;
+    }
+    for (final signature in widget.formData.extraSignatures) {
+      if (!signature.isCaptured) continue;
+      rows.add(_listedSignature(index, photoPath: signature.photoPath, points: signature.points));
+      index++;
+    }
+    return rows;
   }
 
   void _commitSessionPhotos(List<String> newPhotos) {
@@ -198,50 +442,69 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     }
   }
 
-  Future<void> _startCameraMultiCapture() async {
-    // 1. Launch Google ML Kit Document Scanner:
-    // Automatically detects card 4-corners, auto-crops, removes background,
-    // and allows multiple card photos to be captured right in the scanner session!
+  static const MethodChannel _documentScannerChannel = MethodChannel('my_own_pms/document_scanner');
+
+  Future<({bool camera, bool scanner})> _prepareDocumentScanner() async {
+    if (kIsWeb || !Platform.isAndroid) return (camera: true, scanner: true);
     try {
-      final scanner = DocumentScanner(
-        options: DocumentScannerOptions(
-          documentFormats: const {DocumentFormat.jpeg},
-          mode: ScannerMode.full,
-          pageLimit: 10,
-          isGalleryImport: true,
-        ),
-      );
-
-      final DocumentScanningResult result = await scanner.scanDocument();
-      await scanner.close();
-
-      final List<String> scannedImages = result.images ?? [];
-      if (scannedImages.isNotEmpty) {
-        _commitSessionPhotos(scannedImages);
-        return;
-      } else {
-        // User backed out of scanner without capturing
-        return;
-      }
+      final raw = await _documentScannerChannel.invokeMethod<dynamic>('prepare');
+      final map = raw is Map ? raw : const {};
+      return (camera: map['camera'] == true, scanner: map['scanner'] == true);
     } catch (e) {
-      debugPrint('Google ML Kit Document Scanner unavailable: $e, falling back to camera');
+      debugPrint('Document scanner prepare skipped: $e');
+      return (camera: true, scanner: true);
     }
+  }
 
-    // 2. Fallback to standard camera if ML Kit is not available
-    final picker = ImagePicker();
-    final List<String> sessionPhotos = [];
+  /// Opens Google's document scanner (Manual / Auto capture). One reply only, so a
+  /// late download callback cannot crash the app. Falls back to the camera if the
+  /// scanner cannot start.
+  Future<List<String>> _openDocumentScanner({required int pageLimit}) async {
+    if (!kIsWeb && Platform.isAndroid) {
+      final ready = await _prepareDocumentScanner();
+      if (!ready.camera) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Allow camera access to scan the ID.'),
+              backgroundColor: Color(0xFFDC2626),
+            ),
+          );
+        }
+        return const [];
+      }
+      try {
+        final raw = await _documentScannerChannel.invokeMethod<dynamic>('scan', {'pageLimit': pageLimit});
+        final map = raw is Map ? raw : const {};
+        if (map['cancelled'] == true) return const [];
+        if (map['ok'] == true) {
+          final images = map['images'];
+          if (images is List) {
+            return images.map((image) => '$image').where((image) => image.isNotEmpty).toList();
+          }
+          return const [];
+        }
+      } catch (e) {
+        debugPrint('Document scanner failed: $e');
+      }
+    } else {
+      final images = await _scanDocument(pageLimit: pageLimit);
+      if (images != null) return images;
+    }
+    return _capturePlainCameraPhoto();
+  }
 
+  Future<List<String>> _capturePlainCameraPhoto() async {
     try {
-      final XFile? file = await picker.pickImage(
+      final XFile? file = await ImagePicker().pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.rear,
         maxWidth: 1920,
         maxHeight: 1440,
         imageQuality: 90,
       );
-
-      if (file == null) return;
-      sessionPhotos.add(file.path);
+      if (file == null) return const [];
+      return [file.path];
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -251,11 +514,43 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
           ),
         );
       }
-      return;
+      return const [];
     }
+  }
 
-    if (!mounted) return;
-    await _showMultiPhotoReviewModal(sessionPhotos, isCamera: true);
+  Future<List<String>?> _scanDocument({required int pageLimit}) async {
+    for (final mode in const [ScannerMode.full, ScannerMode.base]) {
+      DocumentScanner? scanner;
+      try {
+        scanner = DocumentScanner(
+          options: DocumentScannerOptions(
+            documentFormats: const {DocumentFormat.jpeg},
+            mode: mode,
+            pageLimit: pageLimit,
+            isGalleryImport: true,
+          ),
+        );
+        final DocumentScanningResult result = await scanner.scanDocument();
+        final images = result.images ?? const <String>[];
+        try {
+          await scanner.close();
+        } catch (_) {}
+        return images;
+      } catch (e) {
+        try {
+          await scanner?.close();
+        } catch (_) {}
+        final message = e.toString().toLowerCase();
+        if (message.contains('cancel')) return const [];
+        debugPrint('Document scanner ($mode) unavailable: $e');
+      }
+    }
+    return null;
+  }
+
+  Future<void> _startCameraMultiCapture() async {
+    final List<String> scannedImages = await _openDocumentScanner(pageLimit: 10);
+    if (scannedImages.isNotEmpty) _commitSessionPhotos(scannedImages);
   }
 
   Future<void> _startGalleryMultiSelect() async {
@@ -388,10 +683,7 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                           separatorBuilder: (context, index) => const SizedBox(width: 8),
                           itemBuilder: (ctx, i) {
                             final path = sessionPhotos[i];
-                            final isReal = !kIsWeb &&
-                                path != 'scanned_aadhaar.png' &&
-                                path != 'scanned_aadhaar_back.png' &&
-                                File(path).existsSync();
+                            final isReal = isRemoteProofPath(path) || isStoredProofFile(path);
                             return Container(
                               width: 110,
                               height: 80,
@@ -406,7 +698,7 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                                   fit: StackFit.expand,
                                   children: [
                                     if (isReal)
-                                      Image.file(File(path), fit: BoxFit.cover)
+                                      proofImage(path, fit: BoxFit.cover)
                                     else
                                       Container(
                                         color: const Color(0xFF1E293B),
@@ -495,45 +787,15 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: () async {
-                                try {
-                                  final scanner = DocumentScanner(
-                                    options: DocumentScannerOptions(
-                                      documentFormats: const {DocumentFormat.jpeg},
-                                      mode: ScannerMode.full,
-                                      pageLimit: 5,
-                                      isGalleryImport: true,
-                                    ),
-                                  );
-                                  final DocumentScanningResult result = await scanner.scanDocument();
-                                  await scanner.close();
-                                  final List<String> more = result.images ?? [];
-                                  if (more.isNotEmpty) {
-                                    setModalState(() {
-                                      for (final m in more) {
-                                        if (!sessionPhotos.contains(m)) {
-                                          sessionPhotos.add(m);
-                                        }
-                                      }
-                                    });
-                                    return;
+                                final List<String> more = await _openDocumentScanner(pageLimit: 5);
+                                if (more.isEmpty) return;
+                                setModalState(() {
+                                  for (final m in more) {
+                                    if (!sessionPhotos.contains(m)) {
+                                      sessionPhotos.add(m);
+                                    }
                                   }
-                                } catch (_) {}
-
-                                final picker = ImagePicker();
-                                try {
-                                  final XFile? file = await picker.pickImage(
-                                    source: ImageSource.camera,
-                                    preferredCameraDevice: CameraDevice.rear,
-                                    maxWidth: 1920,
-                                    maxHeight: 1440,
-                                    imageQuality: 90,
-                                  );
-                                  if (file != null) {
-                                    setModalState(() {
-                                      sessionPhotos.add(file.path);
-                                    });
-                                  }
-                                } catch (_) {}
+                                });
                               },
                               icon: const Icon(Icons.camera_alt_rounded, size: 16),
                               label: Text(
@@ -617,244 +879,207 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
   void _showAddProofSourceBottomSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFCBD5E1),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x1A0F172A),
+                    blurRadius: 24,
+                    offset: Offset(0, 8),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Row(
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFCBD5E1),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
                       ),
-                      child: const Icon(Icons.add_photo_alternate_rounded, color: AppColors.primary, size: 22),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Add ID Proof',
-                            style: GoogleFonts.inter(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF0F172A),
-                            ),
+                    const SizedBox(height: 16),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE6F7F2),
+                            borderRadius: BorderRadius.circular(14),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Capture multiple with Camera or select all from Gallery',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: const Color(0xFF64748B),
-                            ),
+                          child: const Icon(Icons.badge_rounded, color: Color(0xFF0F766E), size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Add ID Proof',
+                                style: GoogleFonts.inter(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF0F172A),
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Add the front and back. At least 2 photos are required.',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.35,
+                                  color: const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildProofSourceCard(
+                      icon: Icons.document_scanner_rounded,
+                      iconColor: const Color(0xFF0F766E),
+                      iconBackground: const Color(0xFFE6F7F2),
+                      title: 'Document Scanner',
+                      badge: 'AI Auto-Crop',
+                      badgeColor: const Color(0xFF0F766E),
+                      badgeBackground: const Color(0xFFECFDF5),
+                      description: 'Finds the ID corners, crops the page, and removes the background.',
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _startCameraMultiCapture();
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    _buildProofSourceCard(
+                      icon: Icons.photo_library_rounded,
+                      iconColor: const Color(0xFF1D4ED8),
+                      iconBackground: const Color(0xFFEFF6FF),
+                      title: 'Select from Gallery',
+                      badge: 'Multi-Select',
+                      badgeColor: const Color(0xFF1D4ED8),
+                      badgeBackground: const Color(0xFFEFF6FF),
+                      description: 'Choose several ID photos at once, then tap Done.',
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _startGalleryMultiSelect();
+                      },
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
-
-                // Option 1: Camera (Capture Multiple)
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _startCameraMultiCapture();
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF10B981).withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(Icons.camera_alt_rounded, color: Color(0xFF059669), size: 22),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Document Scanner (Google ML Kit)',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF0F172A),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFECFDF5),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: const Color(0xFFA7F3D0)),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.auto_awesome, size: 10, color: Color(0xFF059669)),
-                                          const SizedBox(width: 3),
-                                          Text(
-                                            'AI Auto-Crop',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 9.5,
-                                              fontWeight: FontWeight.w700,
-                                              color: const Color(0xFF059669),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  'Auto-detects 4 corners, removes background & auto-crops',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11.5,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 12),
-
-                // Option 2: Gallery (Multi-Select)
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _startGalleryMultiSelect();
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(Icons.photo_library_rounded, color: Color(0xFF2563EB), size: 22),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Select from Gallery',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: const Color(0xFF0F172A),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFEFF6FF),
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: const Color(0xFFBFDBFE)),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.photo_library_outlined, size: 10, color: Color(0xFF2563EB)),
-                                          const SizedBox(width: 3),
-                                          Text(
-                                            'Multi-Select',
-                                            style: GoogleFonts.inter(
-                                              fontSize: 9.5,
-                                              fontWeight: FontWeight.w700,
-                                              color: const Color(0xFF2563EB),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  'Select multiple ID photos at once and press Done',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11.5,
-                                    color: const Color(0xFF64748B),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildProofSourceCard({
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBackground,
+    required String title,
+    required String badge,
+    required Color badgeColor,
+    required Color badgeBackground,
+    required String description,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: const Color(0xFFF8FAFC),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: iconBackground,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: iconColor, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.inter(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: badgeBackground,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: badgeColor.withValues(alpha: 0.18)),
+                      ),
+                      child: Text(
+                        badge,
+                        style: GoogleFonts.inter(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: badgeColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      description,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        height: 1.35,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.arrow_forward_rounded, size: 18, color: Color(0xFF94A3B8)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -875,10 +1100,7 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
   }
 
   Widget _buildPhotoCard(int index, String photoUrl, {required double width, required double height}) {
-    final bool isRealFile = !kIsWeb &&
-        photoUrl != 'scanned_aadhaar.png' &&
-        photoUrl != 'scanned_aadhaar_back.png' &&
-        File(photoUrl).existsSync();
+    final bool isRealFile = isRemoteProofPath(photoUrl) || isStoredProofFile(photoUrl);
 
     final label = 'ID #${index + 1}';
 
@@ -911,15 +1133,7 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                   label,
                   isBackSide: index % 2 != 0,
                 ),
-                child: Image.file(
-                  File(photoUrl),
-                  fit: BoxFit.cover,
-                  errorBuilder: (ctx, err, stack) => Container(
-                    color: const Color(0xFF1E293B),
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.badge_rounded, color: Colors.white54, size: 24),
-                  ),
-                ),
+                child: proofImage(photoUrl, fit: BoxFit.cover),
               )
             else
               GestureDetector(
@@ -1036,17 +1250,25 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
             child: const Icon(Icons.badge_outlined, color: AppColors.primary, size: 22),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Attach Guest ID Proofs',
-            style: GoogleFonts.inter(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: const Color(0xFF1E293B),
+          Text.rich(
+            TextSpan(
+              text: 'ID Proof',
+              style: GoogleFonts.inter(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1E293B),
+              ),
+              children: const [
+                TextSpan(
+                  text: ' *',
+                  style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w700),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 3),
           Text(
-            'Capture multiple via camera or select all from gallery',
+            'Minimum 1 ID proof',
             style: GoogleFonts.inter(
               fontSize: 11,
               color: const Color(0xFF64748B),
@@ -1086,12 +1308,20 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                 spacing: 6,
                 runSpacing: 4,
                 children: [
-                  Text(
-                    'ID Proofs Attached (${_idPhotos.length})',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
+                  Text.rich(
+                    TextSpan(
+                      text: 'ID Proofs Attached (${_idPhotos.length})',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                      children: const [
+                        TextSpan(
+                          text: ' *',
+                          style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w700),
+                        ),
+                      ],
                     ),
                   ),
                   Container(
@@ -1140,6 +1370,13 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
             ),
           ],
         ),
+        if (_idPhotos.isEmpty) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Minimum 1 ID proof',
+            style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B)),
+          ),
+        ],
         const SizedBox(height: 8),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -1168,11 +1405,49 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     );
   }
 
+  Widget _fieldLabel(String text, {bool required = false}) {
+    return Text.rich(
+      TextSpan(
+        text: text,
+        style: GoogleFonts.inter(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFF0F172A),
+        ),
+        children: [
+          if (required)
+            const TextSpan(
+              text: ' *',
+              style: TextStyle(color: Color(0xFFDC2626), fontWeight: FontWeight.w700),
+            ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  String _mobileDigits(String phone) {
+    var digits = phone.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 10 && digits.startsWith('91')) {
+      digits = digits.substring(digits.length - 10);
+    }
+    return digits;
+  }
+
+  bool _isValidMobile(String phone) => RegExp(r'^[6-9]\d{9}$').hasMatch(_mobileDigits(phone));
+
   @override
   Widget build(BuildContext context) {
     final isNameInvalid = widget.showValidationErrors && _nameController.text.trim().isEmpty;
-    final isIdNumberInvalid = widget.showValidationErrors && _idNumberController.text.trim().isEmpty;
-    final isPhoneInvalid = widget.showValidationErrors && _phoneController.text.trim().isEmpty;
+    final phoneText = _phoneController.text.trim();
+    final isPhoneEmpty = widget.showValidationErrors && phoneText.isEmpty;
+    final isPhoneInvalid = widget.showValidationErrors && phoneText.isNotEmpty && !_isValidMobile(phoneText);
+    final isProofInvalid = widget.showValidationErrors && _idPhotos.isEmpty;
+    final isSignatureInvalid = widget.showValidationErrors && !widget.formData.isSignatureCaptured;
+    final phoneError = isPhoneEmpty
+        ? 'Mobile number is required'
+        : (isPhoneInvalid ? 'Enter a valid 10-digit mobile number' : null);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1184,10 +1459,10 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: (isNameInvalid || isPhoneInvalid)
+              color: (isNameInvalid || isPhoneEmpty || isPhoneInvalid || isProofInvalid || isSignatureInvalid)
                   ? const Color(0xFFFCA5A5)
                   : const Color(0xFFE2E8F0),
-              width: (isNameInvalid || isPhoneInvalid) ? 1.5 : 1.0,
+              width: (isNameInvalid || isPhoneEmpty || isPhoneInvalid || isProofInvalid || isSignatureInvalid) ? 1.5 : 1.0,
             ),
             boxShadow: const [
               BoxShadow(
@@ -1232,9 +1507,9 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
 
               // 1. Main Guest Name
               CustomTextField(
-                label: 'Main Guest Name *',
+                labelWidget: _fieldLabel('Main Guest Name', required: true),
                 hintText: 'Enter guest name',
-                errorText: isNameInvalid ? 'Guest full name (as per Govt ID) is required' : null,
+                errorText: isNameInvalid ? 'Main guest name is required' : null,
                 controller: _nameController,
                 prefixIcon: Icons.badge_outlined,
                 onChanged: (_) {
@@ -1247,10 +1522,10 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
 
               // 2. Guest Name (Optional)
               CustomTextField(
-                label: 'Guest Name (Optional)',
+                label: 'Guest Name',
                 hintText: 'Enter guest name',
                 controller: _secondGuestNameController,
-                keyboardType: TextInputType.name,
+                textCapitalization: TextCapitalization.words,
                 prefixIcon: Icons.person_outline_rounded,
                 onChanged: (_) {
                   _notify();
@@ -1262,9 +1537,9 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
 
               // 3. Mobile Number
               CustomTextField(
-                label: 'Mobile Number *',
-                hintText: 'Enter mobile number',
-                errorText: isPhoneInvalid ? 'Mobile number is required' : null,
+                labelWidget: _fieldLabel('Mobile Number', required: true),
+                hintText: '10-digit mobile number',
+                errorText: phoneError,
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
                 prefixIcon: Icons.phone_android_rounded,
@@ -1278,11 +1553,26 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
 
               // 4. Email
               CustomTextField(
-                label: 'Email (Optional)',
+                label: 'Email',
                 hintText: 'Enter email address',
                 controller: _emailController,
                 keyboardType: TextInputType.emailAddress,
                 prefixIcon: Icons.alternate_email_rounded,
+                onChanged: (_) {
+                  _notify();
+                  setState(() {});
+                },
+              ),
+
+              const SizedBox(height: 10),
+
+              // 5. Address
+              CustomTextField(
+                label: 'Address',
+                hintText: 'House / flat, street, city',
+                controller: _addressController,
+                keyboardType: TextInputType.streetAddress,
+                prefixIcon: Icons.home_outlined,
                 onChanged: (_) {
                   _notify();
                   setState(() {});
@@ -1303,8 +1593,6 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                     child: Column(
                       children: [
                         const Text('e.g. 5421-9876-1234 (12 digits)'),
-                        if (isIdNumberInvalid)
-                          const Text('Please enter valid Aadhaar Card document number'),
                       ],
                     ),
                   ),
@@ -1315,31 +1603,64 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
 
               // ID Document Photos Section (Single Add ID Proof action & Preview Grid)
               _idPhotos.isEmpty ? _buildEmptyIdPhotosState() : _buildFilledIdPhotosState(),
+              if (isProofInvalid)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 2),
+                  child: Text(
+                    'Add at least 1 ID proof',
+                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFFDC2626)),
+                  ),
+                ),
 
               const SizedBox(height: 12),
 
               // Digital Signature Pad for Guest Identity Authorization (AS IS)
               SignaturePadWidget(
+                key: const ValueKey('primary_signature'),
                 signerName: _nameController.text.trim().isNotEmpty
                     ? _nameController.text.trim()
                     : 'Primary Guest',
                 initialPoints: widget.formData.signaturePoints,
+                initialPhotoPath: widget.formData.signaturePhotoPath,
                 isRequired: true,
                 onSignatureChanged: (points) {
-                  setState(() {
-                    widget.formData.signaturePoints = List.from(points);
-                    widget.formData.isSignatureCaptured = points.any((p) => p != null);
-                  });
-                  _notify();
+                  if (!points.any((point) => point != null)) return;
+                  _keepSignature(points: points);
                 },
-                onCleared: () {
-                  setState(() {
-                    widget.formData.signaturePoints.clear();
-                    widget.formData.isSignatureCaptured = false;
-                  });
-                  _notify();
+                onPhotoChanged: (path) {
+                  if (path == null || path.trim().isEmpty) return;
+                  _keepSignature(photoPath: path);
                 },
+                onCleared: _clearPrimarySignature,
               ),
+              ..._allSignatureRows(),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  key: const ValueKey('add_extra_signature_btn'),
+                  onPressed: _addExtraSignature,
+                  icon: const Icon(Icons.add_rounded, size: 16),
+                  label: Text(
+                    'Add Signature',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12.5),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF0F766E),
+                    side: const BorderSide(color: Color(0xFF99F6E4)),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+              if (isSignatureInvalid)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 2),
+                  child: Text(
+                    'Signature is required',
+                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w500, color: const Color(0xFFDC2626)),
+                  ),
+                ),
             ],
           ),
         ),
@@ -1348,4 +1669,53 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
       ],
     );
   }
+}
+
+class _MiniSignaturePainter extends CustomPainter {
+  final List<Offset?> points;
+
+  _MiniSignaturePainter(this.points);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final spots = points.whereType<Offset>().toList();
+    if (spots.isEmpty) return;
+    var minX = spots.first.dx;
+    var maxX = spots.first.dx;
+    var minY = spots.first.dy;
+    var maxY = spots.first.dy;
+    for (final spot in spots) {
+      if (spot.dx < minX) minX = spot.dx;
+      if (spot.dx > maxX) maxX = spot.dx;
+      if (spot.dy < minY) minY = spot.dy;
+      if (spot.dy > maxY) maxY = spot.dy;
+    }
+    final width = (maxX - minX).abs() < 1 ? 1.0 : maxX - minX;
+    final height = (maxY - minY).abs() < 1 ? 1.0 : maxY - minY;
+    final paint = Paint()
+      ..color = const Color(0xFF0F172A)
+      ..strokeWidth = 1.4
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    final path = Path();
+    var drawing = false;
+    for (final point in points) {
+      if (point == null) {
+        drawing = false;
+        continue;
+      }
+      final dx = 4 + (point.dx - minX) / width * (size.width - 8);
+      final dy = 4 + (point.dy - minY) / height * (size.height - 8);
+      if (!drawing) {
+        path.moveTo(dx, dy);
+        drawing = true;
+      } else {
+        path.lineTo(dx, dy);
+      }
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniSignaturePainter oldDelegate) => true;
 }

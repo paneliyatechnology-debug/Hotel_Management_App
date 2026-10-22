@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../data/models/admin_dashboard_model.dart';
 import '../../data/models/hotel_stats_model.dart';
 
 // ============================================================================
@@ -30,7 +31,9 @@ class LiveRoomOccupancyDonutCard extends StatelessWidget {
     final cleaning = stats.housekeepingQueue;
     final maintenance = stats.maintenanceBlocked;
 
-    final occupancyPct = total > 0 ? ((occupied / total) * 100).round() : 0;
+    final occupancyPct = stats.occupancyRatePercentage >= 0
+        ? stats.occupancyRatePercentage
+        : (total > 0 ? ((occupied / total) * 100).round() : 0);
     final availablePct = total > 0 ? ((available / total) * 100).round() : 100;
     final cleaningPct = total > 0 ? ((cleaning / total) * 100).round() : 0;
     final maintenancePct = total > 0 ? ((maintenance / total) * 100).round() : 0;
@@ -335,19 +338,25 @@ class _DonutChartPainter extends CustomPainter {
 // 2. REVENUE & COLLECTION DYNAMICS SPLINE AREA CARD
 // ============================================================================
 class RevenueDynamicsSplineCard extends StatelessWidget {
+  final String collectionCaption;
   final String total7DayCollection;
   final String upiPercentage;
   final String cashPercentage;
+  final String projectionCaption;
   final String projectedMonthEnd;
   final String weeklyGrowth;
+  final List<WeeklyRevenuePoint> weeklyRevenue;
 
   const RevenueDynamicsSplineCard({
     super.key,
+    this.collectionCaption = '7-Day Total Collection',
     this.total7DayCollection = '₹21,000',
     this.upiPercentage = '98% UPI',
     this.cashPercentage = '32% Cash',
+    this.projectionCaption = 'Projected Month End',
     this.projectedMonthEnd = '₹0',
     this.weeklyGrowth = '+14.8% vs last week',
+    this.weeklyRevenue = const [],
   });
 
   @override
@@ -435,7 +444,7 @@ class RevenueDynamicsSplineCard extends StatelessWidget {
 
           const SizedBox(height: 3),
           Text(
-            '7-Day Total Collection: $total7DayCollection',
+            '$collectionCaption: $total7DayCollection',
             style: GoogleFonts.inter(
               fontSize: 11,
               fontWeight: FontWeight.w600,
@@ -450,7 +459,7 @@ class RevenueDynamicsSplineCard extends StatelessWidget {
             height: 130,
             width: double.infinity,
             child: CustomPaint(
-              painter: _SplineChartPainter(),
+              painter: _SplineChartPainter(points: weeklyRevenue),
             ),
           ),
 
@@ -464,7 +473,7 @@ class RevenueDynamicsSplineCard extends StatelessWidget {
             runSpacing: 4,
             children: [
               Text(
-                'Projected Month End: $projectedMonthEnd',
+                '$projectionCaption: $projectedMonthEnd',
                 style: GoogleFonts.inter(
                   fontSize: 10,
                   fontWeight: FontWeight.w500,
@@ -495,31 +504,49 @@ class RevenueDynamicsSplineCard extends StatelessWidget {
 }
 
 class _SplineChartPainter extends CustomPainter {
+  final List<WeeklyRevenuePoint> points;
+
+  const _SplineChartPainter({required this.points});
+
   @override
   void paint(Canvas canvas, Size size) {
-    final days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Today'];
-    final dataPoints = [0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45]; // straight or gentle wave
+    final series = points.isEmpty
+        ? const [
+            WeeklyRevenuePoint(day: 'Mon'),
+            WeeklyRevenuePoint(day: 'Tue'),
+            WeeklyRevenuePoint(day: 'Wed'),
+            WeeklyRevenuePoint(day: 'Thu'),
+            WeeklyRevenuePoint(day: 'Fri'),
+            WeeklyRevenuePoint(day: 'Sat'),
+            WeeklyRevenuePoint(day: 'Sun'),
+          ]
+        : points;
+    final days = series.map((item) => item.shortDay.isEmpty ? '—' : item.shortDay).toList();
+    final maxRevenue = series.fold<double>(0, (max, item) => item.revenue > max ? item.revenue : max);
+    final dataPoints = series
+        .map((item) => maxRevenue <= 0 ? 0.08 : 0.12 + (0.78 * (item.revenue / maxRevenue)))
+        .toList();
 
     final width = size.width;
     final height = size.height - 24; // reserve 24 for labels
-    final step = width / (dataPoints.length - 1);
+    final step = dataPoints.length <= 1 ? width : width / (dataPoints.length - 1);
 
     final path = Path();
     final fillPath = Path();
 
-    final points = <Offset>[];
+    final dots = <Offset>[];
     for (int i = 0; i < dataPoints.length; i++) {
       final x = i * step;
       final y = height * (1 - dataPoints[i]);
-      points.add(Offset(x, y));
+      dots.add(Offset(x, y));
     }
 
-    path.moveTo(points[0].dx, points[0].dy);
-    fillPath.moveTo(points[0].dx, points[0].dy);
+    path.moveTo(dots[0].dx, dots[0].dy);
+    fillPath.moveTo(dots[0].dx, dots[0].dy);
 
-    for (int i = 0; i < points.length - 1; i++) {
-      final p0 = points[i];
-      final p1 = points[i + 1];
+    for (int i = 0; i < dots.length - 1; i++) {
+      final p0 = dots[i];
+      final p1 = dots[i + 1];
       final controlPoint1 = Offset(p0.dx + (p1.dx - p0.dx) / 2, p0.dy);
       final controlPoint2 = Offset(p0.dx + (p1.dx - p0.dx) / 2, p1.dy);
       path.cubicTo(controlPoint1.dx, controlPoint1.dy, controlPoint2.dx, controlPoint2.dy, p1.dx, p1.dy);
@@ -559,7 +586,7 @@ class _SplineChartPainter extends CustomPainter {
       ..strokeWidth = 2.2
       ..style = PaintingStyle.stroke;
 
-    for (final pt in points) {
+    for (final pt in dots) {
       canvas.drawCircle(pt, 4.5, dotBgPaint);
       canvas.drawCircle(pt, 4.5, dotRingPaint);
     }
@@ -584,7 +611,15 @@ class _SplineChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _SplineChartPainter oldDelegate) {
+    if (oldDelegate.points.length != points.length) return true;
+    for (var i = 0; i < points.length; i++) {
+      if (oldDelegate.points[i].revenue != points[i].revenue || oldDelegate.points[i].day != points[i].day) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
 
 // ============================================================================

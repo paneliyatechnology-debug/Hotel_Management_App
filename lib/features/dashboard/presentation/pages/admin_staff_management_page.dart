@@ -5,11 +5,19 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/widgets/app_snackbar.dart';
 import '../../data/models/admin_models.dart';
 import '../../data/repositories/hotel_admin_repository.dart';
+import '../widgets/dashboard_shimmer_loader.dart';
+
+class StaffDirectoryMemory {
+  static List<StaffMemberModel>? items;
+
+  static void clear() => items = null;
+}
 
 class AdminStaffManagementPage extends StatefulWidget {
   final HotelAdminRepository? repository;
+  final bool embedded;
 
-  const AdminStaffManagementPage({super.key, this.repository});
+  const AdminStaffManagementPage({super.key, this.repository, this.embedded = false});
 
   @override
   State<AdminStaffManagementPage> createState() => _AdminStaffManagementPageState();
@@ -19,6 +27,7 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
     with TickerProviderStateMixin {
   late final HotelAdminRepository _repo;
   bool _isLoading = true;
+  bool _fetching = false;
   String? _errorMessage;
   List<StaffMemberModel> _staffList = [];
   String _searchQuery = '';
@@ -35,6 +44,11 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
+    final cached = StaffDirectoryMemory.items;
+    if (cached != null) {
+      _staffList = List<StaffMemberModel>.from(cached);
+      _isLoading = false;
+    }
     _loadStaff();
   }
 
@@ -46,26 +60,39 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
   }
 
   Future<void> _loadStaff() async {
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+    if (_fetching) return;
+    _fetching = true;
+    final firstLoad = StaffDirectoryMemory.items == null && _staffList.isEmpty;
+    if (firstLoad && mounted) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
     try {
       final list = await _repo.fetchStaffMembers();
+      StaffDirectoryMemory.items = list;
       if (mounted) {
         setState(() {
           _staffList = list;
           _isLoading = false;
+          _errorMessage = null;
         });
-        _listAnimController.forward(from: 0);
+        if (firstLoad) _listAnimController.forward(from: 0);
       }
     } catch (e) {
       if (mounted) {
+        final message = e.toString().replaceAll('Exception: ', '');
         setState(() {
-          _errorMessage = e.toString().replaceAll('Exception: ', '');
           _isLoading = false;
+          if (_staffList.isEmpty) _errorMessage = message;
         });
+        if (_staffList.isNotEmpty) {
+          AppSnackBar.showError(context, message);
+        }
       }
+    } finally {
+      _fetching = false;
     }
   }
 
@@ -242,9 +269,12 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
     final isEdit = staff != null;
     final nameCtrl = TextEditingController(text: staff?.name ?? '');
     final emailCtrl = TextEditingController(text: staff?.email ?? '');
-    final phoneCtrl = TextEditingController(text: staff?.phone ?? '');
-    String selectedShift = staff?.shift ?? 'Morning (07:00 - 15:00)';
+    final rawPhone = (staff?.phone ?? '').replaceAll(RegExp(r'\D'), '');
+    final phoneCtrl = TextEditingController(
+      text: rawPhone.length > 10 ? rawPhone.substring(rawPhone.length - 10) : rawPhone,
+    );
     String selectedRole = staff?.role ?? 'RECEPTIONIST';
+    bool isActive = staff?.isActive ?? true;
     bool isSaving = false;
     final formKey = GlobalKey<FormState>();
 
@@ -261,10 +291,10 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
             ),
             padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 12,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              left: 16,
+              right: 16,
+              top: 8,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 12,
             ),
             child: Form(
               key: formKey,
@@ -284,42 +314,42 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
                         ),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 10),
 
                     // Header
                     Row(
                       children: [
                         Container(
-                          width: 44,
-                          height: 44,
+                          width: 36,
+                          height: 36,
                           decoration: BoxDecoration(
                             gradient: const LinearGradient(
                               colors: [Color(0xFF0D9488), Color(0xFF0F766E)],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
-                            borderRadius: BorderRadius.circular(14),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(
                             isEdit ? Icons.edit_rounded : Icons.person_add_rounded,
                             color: Colors.white,
-                            size: 22,
+                            size: 18,
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 isEdit ? 'Edit Staff Member' : 'Onboard New Staff',
-                                style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
                               ),
                               Text(
                                 isEdit
                                     ? 'Update contact & assignment details'
-                                    : 'Auto-generates login credentials via email',
-                                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B)),
+                                    : 'Add a team member and assign their role',
+                                style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF64748B)),
                               ),
                             ],
                           ),
@@ -327,13 +357,13 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
                       ],
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 10),
                     _divider(),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
 
                     // Full Name
                     _label('Staff Full Name *'),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     TextFormField(
                       controller: nameCtrl,
                       textCapitalization: TextCapitalization.words,
@@ -344,11 +374,11 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
                       validator: (v) => (v == null || v.trim().isEmpty) ? 'Name is required' : null,
                     ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 8),
 
                     // Email
                     _label('Login Email *'),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     TextFormField(
                       controller: emailCtrl,
                       keyboardType: TextInputType.emailAddress,
@@ -366,18 +396,18 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
                     ),
                     if (!isEdit)
                       Padding(
-                        padding: const EdgeInsets.only(top: 4, left: 4),
+                        padding: const EdgeInsets.only(top: 2, left: 4),
                         child: Text(
-                          'Credentials will be emailed to this address',
+                          'This email is the staff login',
                           style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF0F766E)),
                         ),
                       ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 8),
 
                     // Phone
                     _label('Contact Phone * (10 digits)'),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     TextFormField(
                       controller: phoneCtrl,
                       keyboardType: TextInputType.phone,
@@ -397,12 +427,14 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
                       },
                     ),
 
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 8),
 
+                    if (!isEdit) ...[
                     // Role
                     _label('Assigned Operational Role *'),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
+                      isExpanded: true,
                       initialValue: selectedRole,
                       decoration: _inputDecoration(hint: '', icon: Icons.badge_outlined),
                       dropdownColor: Colors.white,
@@ -410,79 +442,50 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
                       items: const [
                         DropdownMenuItem(
                           value: 'RECEPTIONIST',
-                          child: Row(
-                            children: [
-                              Icon(Icons.circle, color: Color(0xFF0F766E), size: 8),
-                              SizedBox(width: 8),
-                              Text('Front Desk Receptionist (RECEPTIONIST)'),
-                            ],
-                          ),
+                          child: Text('Receptionist'),
                         ),
                         DropdownMenuItem(
                           value: 'MANAGER',
-                          child: Row(
-                            children: [
-                              Icon(Icons.circle, color: Color(0xFF7C3AED), size: 8),
-                              SizedBox(width: 8),
-                              Text('Front Office Manager (MANAGER)'),
-                            ],
-                          ),
+                          child: Text('Front Office Manager'),
                         ),
                         DropdownMenuItem(
                           value: 'SUPERVISOR',
-                          child: Row(
-                            children: [
-                              Icon(Icons.circle, color: Color(0xFFD97706), size: 8),
-                              SizedBox(width: 8),
-                              Text('Shift Supervisor (SUPERVISOR)'),
-                            ],
-                          ),
+                          child: Text('Shift Supervisor'),
                         ),
                       ],
                       onChanged: (val) {
                         if (val != null) setModalState(() => selectedRole = val);
                       },
                     ),
+                    const SizedBox(height: 8),
+                    ],
 
-                    const SizedBox(height: 14),
+                    if (isEdit)
+                      Material(
+                        color: Colors.transparent,
+                        child: SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          activeThumbColor: Colors.white,
+                          activeTrackColor: const Color(0xFF0F766E),
+                          title: Text(
+                            'Active',
+                            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: const Color(0xFF0F172A)),
+                          ),
+                          subtitle: Text(
+                            isActive ? 'Staff can sign in' : 'Staff cannot sign in',
+                            style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B)),
+                          ),
+                          value: isActive,
+                          onChanged: (value) => setModalState(() => isActive = value),
+                        ),
+                      ),
 
-                    // Shift
-                    _label('Duty Shift Roster'),
-                    const SizedBox(height: 6),
-                    DropdownButtonFormField<String>(
-                      initialValue: selectedShift,
-                      decoration: _inputDecoration(hint: '', icon: Icons.schedule_rounded),
-                      dropdownColor: Colors.white,
-                      style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF0F172A)),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'Morning (07:00 - 15:00)',
-                          child: Text('Morning Shift (07:00 AM - 03:00 PM)'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Evening (15:00 - 23:00)',
-                          child: Text('Evening Shift (03:00 PM - 11:00 PM)'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'Night (23:00 - 07:00)',
-                          child: Text('Night Shift (11:00 PM - 07:00 AM)'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'General (09:00 - 18:00)',
-                          child: Text('General Shift (09:00 AM - 06:00 PM)'),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        if (val != null) setModalState(() => selectedShift = val);
-                      },
-                    ),
-
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
 
                     // Submit button
                     SizedBox(
                       width: double.infinity,
-                      height: 52,
+                      height: 46,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF0F766E),
@@ -506,10 +509,8 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
                                     final result = await _repo.updateStaffMember(
                                       staff.id,
                                       name: name,
-                                      email: email,
                                       phone: phone,
-                                      role: selectedRole,
-                                      shift: selectedShift,
+                                      isActive: isActive,
                                     );
                                     responseMsg = result.message;
                                   } else {
@@ -518,7 +519,6 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
                                       email: email,
                                       phone: phone,
                                       role: selectedRole,
-                                      shift: selectedShift,
                                     );
                                     responseMsg = result.message;
                                   }
@@ -576,8 +576,9 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
       hintStyle: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF94A3B8)),
       prefixIcon: Icon(icon, size: 18, color: disabled ? const Color(0xFFCBD5E1) : const Color(0xFF64748B)),
       filled: true,
+      isDense: true,
       fillColor: disabled ? const Color(0xFFF8FAFC) : const Color(0xFFF8FAFC),
-      contentPadding: const EdgeInsets.symmetric(vertical: 13, horizontal: 14),
+      contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
@@ -627,6 +628,7 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
         ),
         backgroundColor: Colors.white,
         elevation: 0,
+        automaticallyImplyLeading: !widget.embedded,
         centerTitle: false,
         iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
         surfaceTintColor: Colors.white,
@@ -697,23 +699,79 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
   }
 
   Widget _buildLoadingState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return ShimmerWrapper(
+      child: ListView(
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 90),
         children: [
-          const SizedBox(
-            width: 42,
-            height: 42,
-            child: CircularProgressIndicator(
-              color: Color(0xFF0F766E),
-              strokeWidth: 3,
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Row(
+              children: [
+                ShimmerBox(width: 38, height: 38, borderRadius: 10),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ShimmerBox(width: 90, height: 10, borderRadius: 4),
+                      SizedBox(height: 6),
+                      ShimmerBox(width: 120, height: 14, borderRadius: 4),
+                    ],
+                  ),
+                ),
+                ShimmerBox(width: 54, height: 28, borderRadius: 8),
+              ],
             ),
           ),
-          const SizedBox(height: 14),
-          Text(
-            'Loading staff directory...',
-            style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF64748B)),
+          const SizedBox(height: 8),
+          const ShimmerBox(height: 44, borderRadius: 12),
+          const SizedBox(height: 8),
+          const Row(
+            children: [
+              ShimmerBox(width: 64, height: 30, borderRadius: 10),
+              SizedBox(width: 6),
+              ShimmerBox(width: 72, height: 30, borderRadius: 10),
+              SizedBox(width: 6),
+              ShimmerBox(width: 68, height: 30, borderRadius: 10),
+            ],
           ),
+          const SizedBox(height: 10),
+          ...List.generate(5, (_) => _staffCardShimmer()),
+        ],
+      ),
+    );
+  }
+
+  Widget _staffCardShimmer() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.fromLTRB(10, 9, 8, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: const Row(
+        children: [
+          ShimmerBox(width: 36, height: 36, borderRadius: 18),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ShimmerBox(width: 140, height: 13, borderRadius: 4),
+                SizedBox(height: 6),
+                ShimmerBox(width: 100, height: 10, borderRadius: 4),
+              ],
+            ),
+          ),
+          ShimmerBox(width: 36, height: 20, borderRadius: 10),
         ],
       ),
     );

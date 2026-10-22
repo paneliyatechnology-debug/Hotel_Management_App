@@ -98,10 +98,10 @@ class LoadGuestsEvent extends GuestsEvent {
   final int limit;
 
   const LoadGuestsEvent({
-    this.status = 'CHECKED_OUT',
+    this.status = '',
     this.search = '',
     this.page = 1,
-    this.limit = 20,
+    this.limit = 10,
   });
 }
 
@@ -112,10 +112,10 @@ class RefreshGuestsEvent extends GuestsEvent {
   final int limit;
 
   const RefreshGuestsEvent({
-    this.status = 'CHECKED_OUT',
+    this.status = '',
     this.search = '',
     this.page = 1,
-    this.limit = 20,
+    this.limit = 10,
   });
 }
 
@@ -142,6 +142,10 @@ class ApplyAdvancedFiltersEvent extends GuestsEvent {
 
 class ClearAllFiltersEvent extends GuestsEvent {
   const ClearAllFiltersEvent();
+}
+
+class LoadMoreGuestsEvent extends GuestsEvent {
+  const LoadMoreGuestsEvent();
 }
 
 class SelectGuestEvent extends GuestsEvent {

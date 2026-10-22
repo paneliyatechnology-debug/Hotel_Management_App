@@ -59,8 +59,15 @@ class _Step4PaymentSettleState extends State<Step4PaymentSettle> {
   void _notify() {
     final updated = widget.formData.copy();
     updated.paymentMode = _selectedPaymentMode;
+    final roomTotal = updated.pricePerNight * (updated.totalNights > 0 ? updated.totalNights : 1);
+    var discount = double.tryParse(_discountController.text) ?? 0.0;
+    if (discount < 0) discount = 0;
+    if (discount > roomTotal) {
+      discount = roomTotal;
+      _discountController.text = discount.toInt().toString();
+    }
     updated.advancePaid = double.tryParse(_advanceController.text) ?? 0.0;
-    updated.discountAmount = double.tryParse(_discountController.text) ?? 0.0;
+    updated.discountAmount = discount;
     updated.transactionRef = _txnRefController.text;
     widget.onDataChanged(updated);
   }
@@ -285,10 +292,11 @@ class _Step4PaymentSettleState extends State<Step4PaymentSettle> {
                 ),
               ],
               const SizedBox(height: 5),
-              _buildBillLine(
-                'Taxes & Regulatory GST (12%)',
-                CurrencyFormatter.format(widget.formData.gstTax),
-              ),
+              if (widget.formData.gstTax > 0)
+                _buildBillLine(
+                  'GST (${widget.formData.gstRate.toStringAsFixed(0)}%)',
+                  CurrencyFormatter.format(widget.formData.gstTax),
+                ),
               if (widget.formData.discountAmount > 0) ...[
                 const SizedBox(height: 5),
                 _buildBillLine(

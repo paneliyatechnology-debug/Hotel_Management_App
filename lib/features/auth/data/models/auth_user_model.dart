@@ -126,28 +126,22 @@ class HotelSettings {
 
   factory HotelSettings.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const HotelSettings();
+    final tax = json['tax_percentage'] ?? json['taxPercentage'];
     return HotelSettings(
-      checkInTime: json['checkInTime'] as String? ?? '14:00',
-      checkOutTime: json['checkOutTime'] as String? ?? '12:00',
-      timezone: json['timezone'] as String? ?? 'Asia/Kolkata',
-      currency: json['currency'] as String? ?? 'INR',
-      taxPercentage: (json['taxPercentage'] as num?)?.toDouble() ?? 0.0,
-      upiId: json['upiId'] as String? ?? '',
-      gstEnabled: json['gstEnabled'] as bool? ?? true,
-      defaultGstRate: (json['defaultGstRate'] as num?)?.toInt() ?? 18,
+      checkInTime: (json['check_in_time'] ?? json['checkInTime'] ?? '14:00').toString(),
+      checkOutTime: (json['check_out_time'] ?? json['checkOutTime'] ?? '12:00').toString(),
+      timezone: (json['timezone'] ?? 'Asia/Kolkata').toString(),
+      currency: (json['currency'] ?? 'INR').toString(),
+      taxPercentage: tax is num ? tax.toDouble() : double.tryParse('$tax') ?? 0.0,
+      upiId: (json['upi_id'] ?? json['upiId'] ?? '').toString(),
+      gstEnabled: _settingsBool(json['gst_enabled'] ?? json['gstEnabled'], fallback: true),
+      defaultGstRate: (json['defaultGstRate'] as num?)?.toInt() ?? (tax is num ? tax.toInt() : 18),
       defaultCgstRate: (json['defaultCgstRate'] as num?)?.toInt() ?? 9,
       defaultSgstRate: (json['defaultSgstRate'] as num?)?.toInt() ?? 9,
-      taxInclusive: json['taxInclusive'] as bool? ?? false,
-      lateCheckoutGraceMinutes:
-          (json['lateCheckoutGraceMinutes'] as num?)?.toInt() ?? 10,
-      amenities: (json['amenities'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const [],
-      policies: (json['policies'] as List<dynamic>?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const [],
+      taxInclusive: _settingsBool(json['taxInclusive'] ?? json['tax_inclusive'], fallback: false),
+      lateCheckoutGraceMinutes: _settingsInt(json['late_checkout_grace_minutes'] ?? json['lateCheckoutGraceMinutes'], fallback: 10),
+      amenities: _settingsList(json['amenities']),
+      policies: _settingsList(json['policies']),
     );
   }
 
@@ -169,6 +163,29 @@ class HotelSettings {
       };
 }
 
+bool _settingsBool(dynamic value, {required bool fallback}) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final text = value.trim().toLowerCase();
+    if (text == 'true' || text == '1') return true;
+    if (text == 'false' || text == '0') return false;
+  }
+  return fallback;
+}
+
+List<String> _settingsList(dynamic value) {
+  if (value is List) {
+    return value.map((item) => item.toString()).where((item) => item.trim().isNotEmpty).toList();
+  }
+  return const [];
+}
+
+int _settingsInt(dynamic value, {required int fallback}) {
+  if (value is num) return value.toInt();
+  return int.tryParse('$value') ?? fallback;
+}
+
 class HotelInfoModel {
   final String id;
   final String name;
@@ -186,6 +203,8 @@ class HotelInfoModel {
   final String hotelType;
   final String website;
   final String logo;
+  final String gstNumber;
+  final String panNumber;
   final HotelSubscription subscription;
   final HotelSettings settings;
   final HotelSupportContact supportContact;
@@ -207,6 +226,8 @@ class HotelInfoModel {
     this.hotelType = '',
     this.website = '',
     this.logo = '',
+    this.gstNumber = '',
+    this.panNumber = '',
     this.subscription = const HotelSubscription(),
     this.settings = const HotelSettings(),
     this.supportContact = const HotelSupportContact(),
@@ -221,22 +242,24 @@ class HotelInfoModel {
   factory HotelInfoModel.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const HotelInfoModel();
     return HotelInfoModel(
-      id: json['_id'] as String? ?? json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      slug: json['slug'] as String? ?? '',
-      status: json['status'] as String? ?? '',
-      statusReason: json['statusReason'] as String? ?? '',
-      ownerName: json['ownerName'] as String? ?? '',
-      ownerEmail: json['ownerEmail'] as String? ?? '',
-      ownerPhone: json['ownerPhone'] as String? ?? '',
-      address: json['address'] as String? ?? '',
-      city: json['city'] as String? ?? '',
-      state: json['state'] as String? ?? '',
-      country: json['country'] as String? ?? '',
-      pincode: json['pincode'] as String? ?? '',
-      hotelType: json['hotelType'] as String? ?? '',
-      website: json['website'] as String? ?? '',
-      logo: json['logo'] as String? ?? '',
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      name: (json['name'] ?? json['hotel_name'] ?? json['hotelName'] ?? '').toString(),
+      slug: (json['slug'] ?? '').toString(),
+      status: (json['status'] ?? '').toString(),
+      statusReason: (json['statusReason'] ?? '').toString(),
+      ownerName: (json['ownerName'] ?? '').toString(),
+      ownerEmail: (json['ownerEmail'] ?? '').toString(),
+      ownerPhone: (json['ownerPhone'] ?? '').toString(),
+      address: (json['address'] ?? '').toString(),
+      city: (json['city'] ?? '').toString(),
+      state: (json['state'] ?? '').toString(),
+      country: (json['country'] ?? '').toString(),
+      pincode: (json['pincode'] ?? '').toString(),
+      hotelType: (json['hotelType'] ?? '').toString(),
+      website: (json['website'] ?? '').toString(),
+      logo: (json['logo'] ?? '').toString(),
+      gstNumber: (json['gst_number'] ?? json['gstNumber'] ?? json['gstin'] ?? '').toString(),
+      panNumber: (json['pan_number'] ?? json['panNumber'] ?? '').toString(),
       subscription: HotelSubscription.fromJson(
           json['subscription'] as Map<String, dynamic>?),
       settings:
@@ -263,6 +286,8 @@ class HotelInfoModel {
         'hotelType': hotelType,
         'website': website,
         'logo': logo,
+        'gst_number': gstNumber,
+        'pan_number': panNumber,
         'subscription': subscription.toJson(),
         'settings': settings.toJson(),
         'supportContact': supportContact.toJson(),
@@ -296,17 +321,34 @@ class AuthUserModel {
 
   factory AuthUserModel.fromJson(Map<String, dynamic>? json) {
     if (json == null) return const AuthUserModel();
+    final rawHotel = json['hotel'];
+    Map<String, dynamic> hotelMap = {};
+    if (rawHotel is Map<String, dynamic>) {
+      hotelMap = Map<String, dynamic>.from(rawHotel);
+    }
+    final hotelId = (hotelMap['_id'] ??
+            hotelMap['id'] ??
+            json['hotel_id'] ??
+            json['hotelId'] ??
+            json['id'] ??
+            '')
+        .toString();
+    if ((hotelMap['id'] == null && hotelMap['_id'] == null) ||
+        (hotelMap['id']?.toString().isEmpty ?? true)) {
+      hotelMap['id'] = hotelId;
+    }
+
     return AuthUserModel(
-      id: json['_id'] as String? ?? json['id'] as String? ?? '',
-      name: json['name'] as String? ?? '',
-      email: json['email'] as String? ?? '',
-      phone: json['phone'] as String? ?? '',
-      role: json['role'] as String? ?? '',
-      employeeId: json['employeeId'] as String? ?? '',
-      status: json['status'] as String? ?? 'ACTIVE',
-      lastLoginAt: json['lastLoginAt'] as String? ?? '',
-      mustChangePassword: json['mustChangePassword'] as bool? ?? false,
-      hotel: HotelInfoModel.fromJson(json['hotel'] as Map<String, dynamic>?),
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      email: (json['email'] ?? '').toString(),
+      phone: (json['phone'] ?? '').toString(),
+      role: (json['role'] ?? '').toString(),
+      employeeId: (json['employeeId'] ?? '').toString(),
+      status: (json['status'] ?? 'ACTIVE').toString(),
+      lastLoginAt: (json['last_login_at'] ?? json['lastLoginAt'] ?? '').toString(),
+      mustChangePassword: json['must_change_password'] == true || json['mustChangePassword'] == true,
+      hotel: HotelInfoModel.fromJson(hotelMap),
     );
   }
 

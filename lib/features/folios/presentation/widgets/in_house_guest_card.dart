@@ -436,9 +436,9 @@ class InHouseGuestCard extends StatelessWidget {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                               decoration: BoxDecoration(
-                                color: const Color(0xFFFEE2E2),
+                                color: Colors.white,
                                 borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFFECDD3)),
+                                border: Border.all(color: const Color(0xFFDC2626), width: 1.2),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,

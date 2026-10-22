@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../dashboard/data/models/guest_folio_model.dart';
-import '../../../folios/presentation/widgets/guest_folio_details_dialog.dart';
 import '../../data/models/check_in_form_data.dart';
 
 class CheckInSuccessDialog extends StatelessWidget {
@@ -81,9 +80,9 @@ class CheckInSuccessDialog extends StatelessWidget {
     final inDate = _formatDate(formData.checkInDate);
     final outDate = _formatDate(formData.checkOutDate);
 
-    final keycard = formData.assignedKeycardNumber.isNotEmpty
-        ? formData.assignedKeycardNumber
-        : (folio.keycardNumber ?? 'KC-101');
+    final keycard = formData.assignedKeycardNumber.trim().isNotEmpty
+        ? formData.assignedKeycardNumber.trim()
+        : (folio.keycardNumber ?? '').trim();
 
     final advancePaid = formData.advancePaid > 0
         ? formData.advancePaid
@@ -166,33 +165,6 @@ Wish you a relaxing and pleasant stay! ✨🛎️
     }
   }
 
-  void _printFolioPdf(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.picture_as_pdf_rounded, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Opening Folio PDF & invoice details for ${folio.guestName.isNotEmpty ? folio.guestName : formData.guestFullName}...',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF0F766E),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-
-    showDialog(
-      context: context,
-      builder: (ctx) => GuestFolioDetailsDialog(folio: folio),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final guestName = folio.guestName.isNotEmpty && folio.guestName != 'Guest'
@@ -254,7 +226,7 @@ Wish you a relaxing and pleasant stay! ✨🛎️
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Check-In Completed Successfully!',
+                          formData.isEditingBooking ? 'Booking updated' : 'Check-In Completed Successfully!',
                           style: GoogleFonts.inter(
                             fontSize: 19,
                             fontWeight: FontWeight.w800,
@@ -301,30 +273,6 @@ Wish you a relaxing and pleasant stay! ✨🛎️
               LayoutBuilder(
                 builder: (context, constraints) {
                   final isCompact = constraints.maxWidth < 540;
-
-                  final printButton = OutlinedButton.icon(
-                    onPressed: () => _printFolioPdf(context),
-                    icon: const Icon(
-                      Icons.file_download_outlined,
-                      size: 17,
-                      color: Color(0xFF0F172A),
-                    ),
-                    label: Text(
-                      'Print Folio PDF',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF0F172A),
-                      ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      side: const BorderSide(color: Color(0xFFCBD5E1)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  );
 
                   final whatsappButton = ElevatedButton.icon(
                     onPressed: () => _sendWhatsApp(context),
@@ -373,29 +321,17 @@ Wish you a relaxing and pleasant stay! ✨🛎️
                       children: [
                         whatsappButton,
                         const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(child: printButton),
-                            const SizedBox(width: 10),
-                            Expanded(child: doneButton),
-                          ],
-                        ),
+                        doneButton,
                       ],
                     );
                   }
 
                   return Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      printButton,
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          whatsappButton,
-                          const SizedBox(width: 10),
-                          doneButton,
-                        ],
-                      ),
+                      whatsappButton,
+                      const SizedBox(width: 10),
+                      doneButton,
                     ],
                   );
                 },

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../dashboard/data/models/booking_list_query.dart';
 import '../../data/models/guest_model.dart';
 import '../../data/repositories/guests_repository.dart';
 import 'guests_event.dart';
@@ -7,6 +8,7 @@ import 'guests_state.dart';
 
 class GuestsBloc extends Bloc<GuestsEvent, GuestsState> {
   final IGuestsRepository repository;
+  int _requestId = 0;
 
   GuestsBloc({required this.repository}) : super(const GuestsState()) {
     on<LoadGuestsEvent>(_onLoadGuests);
@@ -16,152 +18,214 @@ class GuestsBloc extends Bloc<GuestsEvent, GuestsState> {
     on<ChangeDateFilterEvent>(_onChangeDateFilter);
     on<ApplyAdvancedFiltersEvent>(_onApplyAdvancedFilters);
     on<ClearAllFiltersEvent>(_onClearAllFilters);
+    on<LoadMoreGuestsEvent>(_onLoadMoreGuests);
     on<SelectGuestEvent>(_onSelectGuest);
   }
 
   Future<void> _onLoadGuests(LoadGuestsEvent event, Emitter<GuestsState> emit) async {
-    if (state.allGuests.isEmpty) {
-      emit(state.copyWith(status: GuestsStatus.loading));
-    }
-    try {
-      final guests = await repository.getGuests(
-        status: event.status,
-        search: event.search,
-        page: event.page,
-        limit: event.limit,
-      );
-      final filtered = _filterGuests(
-        allGuests: guests,
-        query: state.searchQuery,
-        statusFilter: state.statusFilter,
-        dateOption: state.dateFilterOption,
-        customRange: state.customDateRange,
-        advanced: state.advancedFilters,
-      );
-      if (guests.isNotEmpty || state.allGuests.isEmpty) {
-        emit(state.copyWith(
-          status: GuestsStatus.loaded,
-          allGuests: guests,
-          filteredGuests: filtered,
-        ));
-      } else {
-        emit(state.copyWith(status: GuestsStatus.loaded));
-      }
-    } catch (e) {
-      emit(state.copyWith(
-        status: GuestsStatus.loaded,
-      ));
-    }
+    await _reload(emit, showLoading: state.allGuests.isEmpty);
   }
 
   Future<void> _onRefreshGuests(RefreshGuestsEvent event, Emitter<GuestsState> emit) async {
+    await _reload(emit, showLoading: false);
+  }
+
+  Future<void> _onSearchGuests(SearchGuestsEvent event, Emitter<GuestsState> emit) async {
+    await _reload(emit, showLoading: false, next: state.copyWith(searchQuery: event.query));
+  }
+
+  Future<void> _onChangeStatusFilter(ChangeStatusFilterEvent event, Emitter<GuestsState> emit) async {
+    await _reload(emit, showLoading: false, next: state.copyWith(statusFilter: event.statusFilter));
+  }
+
+  Future<void> _onChangeDateFilter(ChangeDateFilterEvent event, Emitter<GuestsState> emit) async {
+    await _reload(
+      emit,
+      showLoading: false,
+      next: state.copyWith(
+        dateFilterOption: event.option,
+        customDateRange: event.customRange,
+        clearCustomDateRange: event.customRange == null && event.option != DateFilterOption.customRange,
+      ),
+    );
+  }
+
+  Future<void> _onApplyAdvancedFilters(ApplyAdvancedFiltersEvent event, Emitter<GuestsState> emit) async {
+    await _reload(emit, showLoading: false, next: state.copyWith(advancedFilters: event.filters));
+  }
+
+  Future<void> _onClearAllFilters(ClearAllFiltersEvent event, Emitter<GuestsState> emit) async {
+    await _reload(
+      emit,
+      showLoading: false,
+      next: state.copyWith(
+        searchQuery: '',
+        statusFilter: 'All',
+        dateFilterOption: DateFilterOption.allTime,
+        clearCustomDateRange: true,
+        advancedFilters: const AdvancedFiltersData(),
+      ),
+    );
+  }
+
+  Future<void> _onLoadMoreGuests(LoadMoreGuestsEvent event, Emitter<GuestsState> emit) async {
+    if (!state.remoteResults || !state.hasMore || state.loadingMore || state.status == GuestsStatus.loading) {
+      return;
+    }
+    final request = _requestId;
+    emit(state.copyWith(loadingMore: true));
     try {
-      final guests = await repository.getGuests(
-        status: event.status,
-        search: event.search,
-        page: event.page,
-        limit: event.limit,
-        forceRefresh: true,
-      );
-      final filtered = _filterGuests(
-        allGuests: guests,
-        query: state.searchQuery,
-        statusFilter: state.statusFilter,
-        dateOption: state.dateFilterOption,
-        customRange: state.customDateRange,
-        advanced: state.advancedFilters,
-      );
+      final result = await repository.fetchGuestPage(_queryFor(state, page: state.page + 1));
+      if (request != _requestId) return;
+      final merged = _mergeGuests(state.allGuests, result.guests);
       emit(state.copyWith(
         status: GuestsStatus.loaded,
-        allGuests: guests,
-        filteredGuests: filtered,
+        allGuests: merged,
+        filteredGuests: _applyLocalFilter(merged, state, fromNetwork: result.fromNetwork),
+        page: result.page,
+        listTotal: result.total,
+        hasMore: result.hasMore,
+        loadingMore: false,
+        remoteResults: result.fromNetwork,
       ));
-    } catch (e) {
-      emit(state.copyWith(
-        status: GuestsStatus.error,
-        errorMessage: e.toString(),
-      ));
+    } catch (_) {
+      if (request != _requestId) return;
+      emit(state.copyWith(loadingMore: false));
     }
   }
 
-  void _onSearchGuests(SearchGuestsEvent event, Emitter<GuestsState> emit) {
-    final filtered = _filterGuests(
-      allGuests: state.allGuests,
-      query: event.query,
-      statusFilter: state.statusFilter,
-      dateOption: state.dateFilterOption,
-      customRange: state.customDateRange,
-      advanced: state.advancedFilters,
-    );
-    emit(state.copyWith(
-      searchQuery: event.query,
-      filteredGuests: filtered,
-    ));
+  Future<void> _reload(Emitter<GuestsState> emit, {required bool showLoading, GuestsState? next}) async {
+    final request = ++_requestId;
+    final current = next ?? state;
+    if (showLoading) {
+      emit(current.copyWith(status: GuestsStatus.loading, loadingMore: false));
+    }
+    try {
+      final result = await repository.fetchGuestPage(_queryFor(current, page: 1));
+      if (request != _requestId) return;
+      final guests = result.guests;
+      final visible = _applyLocalFilter(guests, current, fromNetwork: result.fromNetwork);
+      emit(current.copyWith(
+        status: GuestsStatus.loaded,
+        allGuests: guests,
+        filteredGuests: visible,
+        page: result.page,
+        listTotal: result.total,
+        hasMore: result.hasMore,
+        loadingMore: false,
+        remoteResults: result.fromNetwork,
+      ));
+    } catch (_) {
+      if (request != _requestId) return;
+      emit(current.copyWith(status: GuestsStatus.loaded, loadingMore: false));
+    }
   }
 
-  void _onChangeStatusFilter(ChangeStatusFilterEvent event, Emitter<GuestsState> emit) {
-    final filtered = _filterGuests(
-      allGuests: state.allGuests,
-      query: state.searchQuery,
-      statusFilter: event.statusFilter,
-      dateOption: state.dateFilterOption,
-      customRange: state.customDateRange,
-      advanced: state.advancedFilters,
+  BookingListQuery _queryFor(GuestsState current, {required int page}) {
+    final advanced = current.advancedFilters;
+    final range = _resolveDateRange(current.dateFilterOption, current.customDateRange);
+    var checkInFrom = '';
+    var checkInTo = '';
+    var checkOutFrom = '';
+    var checkOutTo = '';
+    if (range != null) {
+      checkInFrom = _ymd(range.start);
+      checkInTo = _dayEnd(range.end);
+    }
+    if (advanced.checkInDate != null) {
+      checkInFrom = _ymd(advanced.checkInDate!);
+      checkInTo = _dayEnd(advanced.checkInDate!);
+    }
+    if (advanced.checkOutDate != null) {
+      checkOutFrom = _ymd(advanced.checkOutDate!);
+      checkOutTo = _dayEnd(advanced.checkOutDate!);
+    }
+    final room = advanced.roomNumber?.trim() ?? '';
+    final typedSearch = current.searchQuery.trim();
+    final roomIsId = RegExp(r'^[a-fA-F0-9]{24}$').hasMatch(room);
+    return BookingListQuery(
+      bookingStatus: _bookingStatus(current),
+      paymentStatus: advanced.paymentStatus?.trim() ?? '',
+      roomId: roomIsId ? room : '',
+      primaryGuestName: advanced.name?.trim() ?? '',
+      mobileNumber: advanced.mobile?.trim() ?? '',
+      search: typedSearch.isNotEmpty ? typedSearch : (roomIsId ? '' : room),
+      checkInFrom: checkInFrom,
+      checkInTo: checkInTo,
+      checkOutFrom: checkOutFrom,
+      checkOutTo: checkOutTo,
+      page: page,
+      limit: 10,
     );
-    emit(state.copyWith(
-      statusFilter: event.statusFilter,
-      filteredGuests: filtered,
-    ));
   }
 
-  void _onChangeDateFilter(ChangeDateFilterEvent event, Emitter<GuestsState> emit) {
-    final filtered = _filterGuests(
-      allGuests: state.allGuests,
-      query: state.searchQuery,
-      statusFilter: state.statusFilter,
-      dateOption: event.option,
-      customRange: event.customRange,
-      advanced: state.advancedFilters,
-    );
-    emit(state.copyWith(
-      dateFilterOption: event.option,
-      customDateRange: event.customRange,
-      filteredGuests: filtered,
-    ));
+  String _bookingStatus(GuestsState current) {
+    final advanced = current.advancedFilters.status;
+    if (advanced == GuestStatus.inHouse) return 'CHECKED_IN';
+    if (advanced == GuestStatus.checkedOut) return 'CHECKED_OUT';
+    if (current.statusFilter == 'In-House') return 'CHECKED_IN';
+    if (current.statusFilter == 'Checked-Out') return 'CHECKED_OUT';
+    return '';
   }
 
-  void _onApplyAdvancedFilters(ApplyAdvancedFiltersEvent event, Emitter<GuestsState> emit) {
-    final filtered = _filterGuests(
-      allGuests: state.allGuests,
-      query: state.searchQuery,
-      statusFilter: state.statusFilter,
-      dateOption: state.dateFilterOption,
-      customRange: state.customDateRange,
-      advanced: event.filters,
-    );
-    emit(state.copyWith(
-      advancedFilters: event.filters,
-      filteredGuests: filtered,
-    ));
+  String _ymd(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
   }
 
-  void _onClearAllFilters(ClearAllFiltersEvent event, Emitter<GuestsState> emit) {
-    final filtered = _filterGuests(
-      allGuests: state.allGuests,
-      query: '',
-      statusFilter: 'All',
-      dateOption: DateFilterOption.allTime,
-      customRange: null,
-      advanced: const AdvancedFiltersData(),
+  String _dayEnd(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-${day}T23:59:59.999Z';
+  }
+
+  List<GuestProfileModel> _mergeGuests(List<GuestProfileModel> current, List<GuestProfileModel> next) {
+    final merged = List<GuestProfileModel>.from(current);
+    final ids = merged.map((guest) => guest.id).toSet();
+    for (final guest in next) {
+      if (guest.id.isEmpty || !ids.add(guest.id)) continue;
+      merged.add(guest);
+    }
+    return merged;
+  }
+
+  List<GuestProfileModel> _applyLocalFilter(
+    List<GuestProfileModel> guests,
+    GuestsState current, {
+    bool fromNetwork = false,
+  }) {
+    if (fromNetwork) {
+      return _filterGuests(
+        allGuests: guests,
+        query: current.searchQuery,
+        statusFilter: current.statusFilter,
+        dateOption: DateFilterOption.allTime,
+        customRange: null,
+        advanced: _sheetFiltersForLoadedPage(current.advancedFilters),
+      );
+    }
+    return _filterGuests(
+      allGuests: guests,
+      query: current.searchQuery,
+      statusFilter: current.statusFilter,
+      dateOption: current.dateFilterOption,
+      customRange: current.customDateRange,
+      advanced: current.advancedFilters,
     );
-    emit(state.copyWith(
-      searchQuery: '',
-      statusFilter: 'All',
-      dateFilterOption: DateFilterOption.allTime,
-      customDateRange: null,
-      advancedFilters: const AdvancedFiltersData(),
-      filteredGuests: filtered,
-    ));
+  }
+
+  AdvancedFiltersData _sheetFiltersForLoadedPage(AdvancedFiltersData advanced) {
+    return AdvancedFiltersData(
+      name: advanced.name,
+      mobile: advanced.mobile,
+      email: advanced.email,
+      floor: advanced.floor,
+      roomNumber: advanced.roomNumber,
+      roomCategory: advanced.roomCategory,
+      status: advanced.status,
+      paymentStatus: advanced.paymentStatus,
+    );
   }
 
   void _onSelectGuest(SelectGuestEvent event, Emitter<GuestsState> emit) {

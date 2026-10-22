@@ -32,11 +32,16 @@ void main() {
     await tester.pumpAndSettle();
 
     // 1. Initial State: Empty signature with "Required" badge & "Add Signature" button
-    expect(find.text('Main Guest Signature'), findsOneWidget);
+    expect(find.byType(SignaturePadWidget), findsOneWidget);
     expect(find.text('Required'), findsOneWidget);
+    expect(find.text('Camera'), findsOneWidget);
+    expect(find.text('Digital Pad'), findsOneWidget);
+
+    await tester.tap(find.text('Digital Pad'));
+    await tester.pumpAndSettle();
+
     expect(find.byKey(const ValueKey('add_signature_btn')), findsOneWidget);
     expect(find.text('Add Signature'), findsOneWidget);
-    expect(find.text('Touch & drag finger here to sign'), findsOneWidget);
 
     // 2. Tap "Add Signature" button to open popup modal
     await tester.tap(find.byKey(const ValueKey('add_signature_btn')));
@@ -115,6 +120,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Open dialog
+    await tester.tap(find.text('Digital Pad'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('add_signature_btn')));
     await tester.pumpAndSettle();
 

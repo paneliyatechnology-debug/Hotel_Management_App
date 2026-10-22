@@ -37,6 +37,7 @@ class _Step2StayRoomState extends State<Step2StayRoom> {
     super.initState();
     _checkInDate = widget.formData.checkInDate;
     _checkOutDate = widget.formData.checkOutDate;
+    _applyStayDateRules();
     _checkInTime = DateTime.now();
     _guests = widget.formData.numberOfGuests;
     _extraBeds = widget.formData.extraBeds;
@@ -45,6 +46,33 @@ class _Step2StayRoomState extends State<Step2StayRoom> {
     if (_selectedRoomId.isEmpty && _effectiveRooms.isNotEmpty) {
       _selectedRoomId = _effectiveRooms.first.id;
     }
+
+    if (_dateOnly(widget.formData.checkInDate) != _checkInDate ||
+        _dateOnly(widget.formData.checkOutDate) != _checkOutDate) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _notify();
+      });
+    }
+  }
+
+  DateTime _dateOnly(DateTime value) => DateTime(value.year, value.month, value.day);
+
+  DateTime get _today => _dateOnly(DateTime.now());
+
+  bool get _isEditing => widget.formData.isEditingBooking;
+
+  void _applyStayDateRules() {
+    if (_isEditing) {
+      _checkInDate = _dateOnly(widget.formData.checkInDate);
+      final checkout = _dateOnly(widget.formData.checkOutDate);
+      _checkOutDate = checkout.isAfter(_checkInDate) ? checkout : _checkInDate.add(const Duration(days: 1));
+      return;
+    }
+    final today = _today;
+    _checkInDate = today;
+    final earliestCheckout = today.add(const Duration(days: 1));
+    final checkout = _dateOnly(_checkOutDate);
+    _checkOutDate = checkout.isAfter(today) ? checkout : earliestCheckout;
   }
 
   List<RoomModel> get _effectiveRooms {
@@ -123,36 +151,80 @@ class _Step2StayRoomState extends State<Step2StayRoom> {
     updated.selectedFloor = _selectedRoom.floor;
     updated.roomType = _selectedRoom.roomType;
     updated.pricePerNight = _selectedRoom.pricePerNight;
+    updated.gstEnabled = _selectedRoom.gstEnabled;
+    updated.gstRate = _selectedRoom.gstEnabled ? _selectedRoom.gstRate : 0;
+    updated.assignedKeycardNumber = _selectedRoom.keyCode.trim();
     widget.onDataChanged(updated);
   }
 
   Future<void> _selectCheckInDate() async {
+    if (_isEditing) {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: _checkInDate,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2100),
+      );
+      if (picked == null) return;
+      setState(() {
+        _checkInDate = _dateOnly(picked);
+        if (!_checkOutDate.isAfter(_checkInDate)) {
+          _checkOutDate = _checkInDate.add(const Duration(days: 1));
+        }
+      });
+      _notify();
+      return;
+    }
+    final today = _today;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _checkInDate,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: today,
+      firstDate: today,
+      lastDate: today,
+      selectableDayPredicate: (day) => _dateOnly(day) == today,
     );
     if (picked != null) {
-      final currentNights = _nightsCount;
       setState(() {
-        _checkInDate = picked;
-        _checkOutDate = _checkInDate.add(Duration(days: currentNights));
+        _checkInDate = today;
+        if (!_dateOnly(_checkOutDate).isAfter(today)) {
+          _checkOutDate = today.add(const Duration(days: 1));
+        }
       });
       _notify();
     }
   }
 
   Future<void> _selectCheckOutDate() async {
+    if (_isEditing) {
+      final earliest = _checkInDate.add(const Duration(days: 1));
+      final current = _dateOnly(_checkOutDate);
+      final initial = current.isBefore(earliest) ? earliest : current;
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: initial,
+        firstDate: earliest,
+        lastDate: DateTime(2100),
+      );
+      if (picked == null) return;
+      setState(() => _checkOutDate = _dateOnly(picked));
+      _notify();
+      return;
+    }
+    final earliest = _today.add(const Duration(days: 1));
+    final current = _dateOnly(_checkOutDate);
+    final initial = current.isBefore(earliest) ? earliest : current;
     final picked = await showDatePicker(
       context: context,
-      initialDate: _checkOutDate,
-      firstDate: _checkInDate.add(const Duration(days: 1)),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: initial,
+      firstDate: earliest,
+      lastDate: _today.add(const Duration(days: 365)),
+      selectableDayPredicate: (day) => _dateOnly(day).isAfter(_today),
     );
     if (picked != null) {
+      final selected = _dateOnly(picked);
+      if (!selected.isAfter(_today)) return;
       setState(() {
-        _checkOutDate = picked;
+        _checkOutDate = selected;
       });
       _notify();
     }

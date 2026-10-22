@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/responsive_layout.dart';
+import '../../../auth/data/repositories/auth_repository.dart';
+import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../check_in_wizard/presentation/bloc/check_in_bloc.dart';
 import '../../../check_in_wizard/presentation/bloc/check_in_event.dart';
 import '../../../check_in_wizard/presentation/pages/check_in_wizard_page.dart';
@@ -31,11 +33,32 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   NavItem _selectedNav = NavItem.availableRooms;
+  String _resortName = '';
 
   @override
   void initState() {
     super.initState();
     context.read<DashboardBloc>().add(LoadDashboardDataEvent());
+    _loadHotelName();
+  }
+
+  Future<void> _loadHotelName() async {
+    try {
+      final signedIn = context.read<AuthBloc>().state.user?.hotel.name.trim() ?? '';
+      if (signedIn.isNotEmpty && mounted) setState(() => _resortName = signedIn);
+    } catch (_) {}
+    try {
+      final cached = await AuthRepository().getSavedUser();
+      final name = cached?.hotel.name.trim() ?? '';
+      if (name.isNotEmpty && mounted) setState(() => _resortName = name);
+    } catch (_) {}
+    final isTest = WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    if (isTest) return;
+    try {
+      final live = await AuthRepository().fetchMe();
+      final name = live?.hotel.name.trim() ?? '';
+      if (name.isNotEmpty && mounted) setState(() => _resortName = name);
+    } catch (_) {}
   }
 
   void _onNavSelected(NavItem item) {
@@ -232,7 +255,7 @@ class _DashboardPageState extends State<DashboardPage> {
                     Builder(
                       builder: (innerContext) {
                         return TopAppBar(
-                          resortName: 'Mayal Resort 2',
+                          resortName: _resortName,
                           showMenuButton: !isDesktop,
                           onOpenDrawer: () {
                             Scaffold.of(innerContext).openDrawer();

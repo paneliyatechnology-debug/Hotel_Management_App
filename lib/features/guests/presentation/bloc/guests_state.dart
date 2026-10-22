@@ -15,6 +15,11 @@ class GuestsState {
   final AdvancedFiltersData advancedFilters;
   final GuestProfileModel? selectedGuest;
   final String? errorMessage;
+  final int page;
+  final int listTotal;
+  final bool hasMore;
+  final bool loadingMore;
+  final bool remoteResults;
 
   const GuestsState({
     this.status = GuestsStatus.initial,
@@ -27,9 +32,14 @@ class GuestsState {
     this.advancedFilters = const AdvancedFiltersData(),
     this.selectedGuest,
     this.errorMessage,
+    this.page = 1,
+    this.listTotal = 0,
+    this.hasMore = false,
+    this.loadingMore = false,
+    this.remoteResults = false,
   });
 
-  int get allCount => allGuests.length;
+  int get allCount => listTotal > allGuests.length ? listTotal : allGuests.length;
   int get totalCount => allGuests.length;
   int get inHouseCount => allGuests.where((g) => g.currentStatus == GuestStatus.inHouse).length;
   int get checkedOutCount => allGuests.where((g) => g.currentStatus == GuestStatus.checkedOut).length;
@@ -78,7 +88,13 @@ class GuestsState {
     AdvancedFiltersData? advancedFilters,
     GuestProfileModel? selectedGuest,
     bool clearSelectedGuest = false,
+    bool clearCustomDateRange = false,
     String? errorMessage,
+    int? page,
+    int? listTotal,
+    bool? hasMore,
+    bool? loadingMore,
+    bool? remoteResults,
   }) {
     return GuestsState(
       status: status ?? this.status,
@@ -87,10 +103,15 @@ class GuestsState {
       searchQuery: searchQuery ?? this.searchQuery,
       statusFilter: statusFilter ?? this.statusFilter,
       dateFilterOption: dateFilterOption ?? this.dateFilterOption,
-      customDateRange: customDateRange ?? this.customDateRange,
+      customDateRange: clearCustomDateRange ? null : (customDateRange ?? this.customDateRange),
       advancedFilters: advancedFilters ?? this.advancedFilters,
       selectedGuest: clearSelectedGuest ? null : (selectedGuest ?? this.selectedGuest),
       errorMessage: errorMessage ?? this.errorMessage,
+      page: page ?? this.page,
+      listTotal: listTotal ?? this.listTotal,
+      hasMore: hasMore ?? this.hasMore,
+      loadingMore: loadingMore ?? this.loadingMore,
+      remoteResults: remoteResults ?? this.remoteResults,
     );
   }
 }

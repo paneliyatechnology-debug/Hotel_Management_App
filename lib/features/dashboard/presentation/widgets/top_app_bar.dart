@@ -9,7 +9,7 @@ class TopAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   const TopAppBar({
     super.key,
-    this.resortName = 'Mayal Resort 2',
+    this.resortName = '',
     this.onOpenDrawer,
     this.showMenuButton = false,
   });
@@ -49,7 +49,7 @@ class TopAppBar extends StatelessWidget implements PreferredSizeWidget {
               children: [
                 Flexible(
                   child: Text(
-                    resortName,
+                    resortName.isNotEmpty ? resortName : 'MYOWNPMS',
                     style: GoogleFonts.inter(
                       fontSize: isCompact ? 14 : 15,
                       fontWeight: FontWeight.w700,

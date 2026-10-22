@@ -222,7 +222,7 @@ class ModernFolioCardMobile extends StatelessWidget {
                     const SizedBox(width: 8),
                     if (folio.status == FolioStatus.inHouse && onCheckout != null)
                       Material(
-                        color: AppColors.statusOccupiedBg,
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(8),
                         child: InkWell(
                           onTap: onCheckout,
@@ -231,19 +231,19 @@ class ModernFolioCardMobile extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.statusOccupiedBorder),
+                              border: Border.all(color: const Color(0xFFDC2626), width: 1.2),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.logout_rounded, size: 12, color: AppColors.statusOccupied),
+                                const Icon(Icons.logout_rounded, size: 12, color: Color(0xFFDC2626)),
                                 const SizedBox(width: 4),
                                 Text(
                                   'Checkout',
                                   style: GoogleFonts.inter(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
-                                    color: AppColors.statusOccupied,
+                                    color: const Color(0xFFDC2626),
                                   ),
                                 ),
                               ],

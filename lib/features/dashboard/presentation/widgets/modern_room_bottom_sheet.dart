@@ -6,6 +6,101 @@ import '../../../../core/widgets/custom_button.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../rooms/data/models/room_model.dart';
 
+Future<bool> showMarkRoomAvailableDialog(
+  BuildContext context, {
+  required String roomNumber,
+}) {
+  final label = roomNumber.trim().isEmpty ? 'this room' : 'Room ${roomNumber.replaceAll('#', '')}';
+  return showDialog<bool>(
+    context: context,
+    builder: (dialogContext) {
+      return Dialog(
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Mark room available?',
+                style: GoogleFonts.inter(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '$label is in cleaning. Confirm to make it available for the next guest.',
+                style: GoogleFonts.inter(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                  color: const Color(0xFF475569),
+                ),
+              ),
+              const SizedBox(height: 18),
+              _appColorButton(
+                label: 'Available',
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+              ),
+              const SizedBox(height: 8),
+              _appColorButton(
+                label: 'Cancel',
+                filled: false,
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  ).then((value) => value == true);
+}
+
+Widget _appColorButton({
+  required String label,
+  required VoidCallback onPressed,
+  bool filled = true,
+}) {
+  final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(12));
+  final text = Text(
+    label,
+    style: GoogleFonts.inter(
+      fontSize: 14,
+      fontWeight: FontWeight.w700,
+      color: filled ? Colors.white : AppColors.primary,
+    ),
+  );
+  if (!filled) {
+    return OutlinedButton(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.primary,
+        backgroundColor: Colors.white,
+        side: const BorderSide(color: AppColors.primary, width: 1.4),
+        shape: shape,
+        padding: const EdgeInsets.symmetric(vertical: 13),
+      ),
+      onPressed: onPressed,
+      child: text,
+    );
+  }
+  return ElevatedButton(
+    style: ElevatedButton.styleFrom(
+      foregroundColor: Colors.white,
+      backgroundColor: AppColors.primary,
+      elevation: 0,
+      shape: shape,
+      padding: const EdgeInsets.symmetric(vertical: 13),
+    ),
+    onPressed: onPressed,
+    child: text,
+  );
+}
+
 class ModernRoomBottomSheet {
   ModernRoomBottomSheet._();
 
@@ -14,12 +109,16 @@ class ModernRoomBottomSheet {
     required RoomModel room,
     required ValueChanged<RoomStatus> onStatusChanged,
     required VoidCallback onExpressCheckIn,
+    VoidCallback? onCheckout,
   }) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (bottomSheetContext) {
+        var selectedStatus = room.status;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
         return Container(
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -151,6 +250,64 @@ class ModernRoomBottomSheet {
 
                   const SizedBox(height: 18),
 
+                  if (room.status == RoomStatus.occupied) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(bottomSheetContext).pop();
+                          onCheckout?.call();
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFDC2626),
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(color: Color(0xFFDC2626), width: 1.4),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.logout_rounded, size: 18, color: Color(0xFFDC2626)),
+                        label: Text(
+                          'Checkout',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFFDC2626),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else if (room.status == RoomStatus.cleaning) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final confirmed = await showMarkRoomAvailableDialog(
+                            bottomSheetContext,
+                            roomNumber: room.roomNumber,
+                          );
+                          if (!confirmed || !bottomSheetContext.mounted) return;
+                          Navigator.of(bottomSheetContext).pop();
+                          onStatusChanged(RoomStatus.available);
+                        },
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(color: AppColors.primary, width: 1.4),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        icon: const Icon(Icons.check_circle_rounded, size: 18, color: AppColors.primary),
+                        label: Text(
+                          'Available',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
                   // Section Title: Quick Status Switcher
                   Text(
                     'QUICK STATUS SWITCHER',
@@ -171,12 +328,9 @@ class ModernRoomBottomSheet {
                         label: 'Available',
                         icon: Icons.hotel_rounded,
                         status: RoomStatus.available,
-                        isSelected: room.status == RoomStatus.available,
+                        isSelected: selectedStatus == RoomStatus.available,
                         activeColor: const Color(0xFF0F766E),
-                        onTap: () {
-                          Navigator.of(bottomSheetContext).pop();
-                          onStatusChanged(RoomStatus.available);
-                        },
+                        onTap: () => setSheetState(() => selectedStatus = RoomStatus.available),
                       ),
                       const SizedBox(width: 8),
                       _buildStatusChip(
@@ -184,12 +338,9 @@ class ModernRoomBottomSheet {
                         label: 'Occupied',
                         icon: Icons.person_rounded,
                         status: RoomStatus.occupied,
-                        isSelected: room.status == RoomStatus.occupied,
+                        isSelected: selectedStatus == RoomStatus.occupied,
                         activeColor: const Color(0xFF0F766E),
-                        onTap: () {
-                          Navigator.of(bottomSheetContext).pop();
-                          onStatusChanged(RoomStatus.occupied);
-                        },
+                        onTap: () => setSheetState(() => selectedStatus = RoomStatus.occupied),
                       ),
                       const SizedBox(width: 8),
                       _buildStatusChip(
@@ -197,12 +348,9 @@ class ModernRoomBottomSheet {
                         label: 'Cleaning',
                         icon: Icons.cleaning_services_rounded,
                         status: RoomStatus.cleaning,
-                        isSelected: room.status == RoomStatus.cleaning,
+                        isSelected: selectedStatus == RoomStatus.cleaning,
                         activeColor: const Color(0xFFD97706),
-                        onTap: () {
-                          Navigator.of(bottomSheetContext).pop();
-                          onStatusChanged(RoomStatus.cleaning);
-                        },
+                        onTap: () => setSheetState(() => selectedStatus = RoomStatus.cleaning),
                       ),
                       const SizedBox(width: 8),
                       _buildStatusChip(
@@ -210,18 +358,26 @@ class ModernRoomBottomSheet {
                         label: 'Repair',
                         icon: Icons.build_rounded,
                         status: RoomStatus.maintenance,
-                        isSelected: room.status == RoomStatus.maintenance,
+                        isSelected: selectedStatus == RoomStatus.maintenance,
                         activeColor: const Color(0xFFDC2626),
-                        onTap: () {
-                          Navigator.of(bottomSheetContext).pop();
-                          onStatusChanged(RoomStatus.maintenance);
-                        },
+                        onTap: () => setSheetState(() => selectedStatus = RoomStatus.maintenance),
                       ),
                     ],
                   ),
 
-                  // Action Buttons for other statuses (if applicable)
-                  if (room.status == RoomStatus.available) ...[
+                  if (selectedStatus != room.status) ...[
+                    const SizedBox(height: 20),
+                    CustomButton(
+                      text: 'Update Status',
+                      icon: Icons.check_rounded,
+                      variant: ButtonVariant.primary,
+                      height: 48,
+                      onPressed: () {
+                        Navigator.of(bottomSheetContext).pop();
+                        onStatusChanged(selectedStatus);
+                      },
+                    ),
+                  ] else if (room.status == RoomStatus.available) ...[
                     const SizedBox(height: 20),
                     CustomButton(
                       text: '⚡ Allocate 4-Step Express Check-In',
@@ -231,18 +387,6 @@ class ModernRoomBottomSheet {
                       onPressed: () {
                         Navigator.of(bottomSheetContext).pop();
                         onExpressCheckIn();
-                      },
-                    ),
-                  ] else if (room.status == RoomStatus.cleaning) ...[
-                    const SizedBox(height: 20),
-                    CustomButton(
-                      text: '✓ Mark Linen Clean & Ready for Guests',
-                      icon: Icons.check,
-                      variant: ButtonVariant.secondary,
-                      height: 48,
-                      onPressed: () {
-                        Navigator.of(bottomSheetContext).pop();
-                        onStatusChanged(RoomStatus.available);
                       },
                     ),
                   ] else if (room.status == RoomStatus.maintenance) ...[
@@ -258,10 +402,13 @@ class ModernRoomBottomSheet {
                       },
                     ),
                   ],
+                  ],
                 ],
               ),
             ),
           ),
+        );
+          },
         );
       },
     );

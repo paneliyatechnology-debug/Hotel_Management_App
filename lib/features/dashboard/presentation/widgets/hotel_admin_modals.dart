@@ -246,7 +246,7 @@ class HotelAdminModals {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Grand Royale Subscription Plan',
+                        'MYOWNPMS Subscription Plan',
                         style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
                       ),
                       Text(

@@ -40,23 +40,7 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
   late final TextEditingController _floorController;
   late final TextEditingController _roomNumberController;
 
-  String? _selectedCategory;
   GuestStatus? _selectedStatus;
-  String? _selectedPaymentStatus;
-
-  final List<String> _roomCategories = const [
-    'Deluxe Room',
-    'Executive Suite',
-    'Family Room',
-    'Standard Room',
-    'Presidential Suite',
-  ];
-
-  final List<String> _paymentStatuses = const [
-    'Paid',
-    'Partially Paid',
-    'Pending',
-  ];
 
   @override
   void initState() {
@@ -66,9 +50,9 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
     _emailController = TextEditingController(text: widget.initialFilters.email);
     _floorController = TextEditingController(text: widget.initialFilters.floor);
     _roomNumberController = TextEditingController(text: widget.initialFilters.roomNumber);
-    _selectedCategory = widget.initialFilters.roomCategory;
-    _selectedStatus = widget.initialFilters.status;
-    _selectedPaymentStatus = widget.initialFilters.paymentStatus;
+    _selectedStatus = widget.initialFilters.status == GuestStatus.cancelled
+        ? null
+        : widget.initialFilters.status;
   }
 
   @override
@@ -88,9 +72,7 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
       _emailController.clear();
       _floorController.clear();
       _roomNumberController.clear();
-      _selectedCategory = null;
       _selectedStatus = null;
-      _selectedPaymentStatus = null;
     });
   }
 
@@ -101,9 +83,7 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
       email: _emailController.text.trim().isEmpty ? null : _emailController.text.trim(),
       floor: _floorController.text.trim().isEmpty ? null : _floorController.text.trim(),
       roomNumber: _roomNumberController.text.trim().isEmpty ? null : _roomNumberController.text.trim(),
-      roomCategory: _selectedCategory,
       status: _selectedStatus,
-      paymentStatus: _selectedPaymentStatus,
     );
   }
 
@@ -118,12 +98,12 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
       padding: EdgeInsets.only(bottom: keyboardPadding),
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag handle
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Container(
             width: 36,
             height: 4,
@@ -132,13 +112,10 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const SizedBox(height: 16),
-
-          // Header
+          const SizedBox(height: 8),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.only(left: 16, right: 8),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Expanded(
                   child: Column(
@@ -147,17 +124,16 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
                       Text(
                         'Filter Guests',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: AppColors.neutral900,
                           letterSpacing: -0.3,
                         ),
                       ),
-                      SizedBox(height: 2),
                       Text(
                         'Refine guest records by details',
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 12,
                           color: AppColors.neutral600,
                         ),
                       ),
@@ -166,37 +142,44 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
                 ),
                 TextButton(
                   onPressed: _clearAll,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
                   child: const Text(
                     'Clear All',
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: AppColors.error,
                     ),
                   ),
                 ),
+                IconButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.close_rounded, size: 22, color: AppColors.neutral700),
+                ),
               ],
             ),
           ),
-
-          const SizedBox(height: 8),
           const Divider(height: 1, color: AppColors.borderSubtle),
-
-          // Scrollable filter fields
-          Expanded(
+          Flexible(
+            fit: FlexFit.loose,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
               children: [
                 // GUEST SECTION
                 _buildSectionHeader('GUEST DETAILS'),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 _buildInputField(
                   label: 'Guest Name',
                   controller: _nameController,
                   hint: 'e.g. Rahul Sharma',
                   icon: Icons.person_outline_rounded,
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
@@ -221,10 +204,9 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
                   ],
                 ),
 
-                const SizedBox(height: 24),
-                // ROOM SECTION
+                const SizedBox(height: 14),
                 _buildSectionHeader('ROOM INFORMATION'),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Row(
                   children: [
                     Expanded(
@@ -247,37 +229,9 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Room Category',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.neutral700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _roomCategories.map((cat) {
-                    final isSelected = _selectedCategory == cat;
-                    return _buildSelectableChip(
-                      label: cat,
-                      isSelected: isSelected,
-                      onTap: () {
-                        setState(() {
-                          _selectedCategory = isSelected ? null : cat;
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-
-                const SizedBox(height: 24),
-                // STATUS SECTION
+                const SizedBox(height: 14),
                 _buildSectionHeader('STAY STATUS'),
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -285,7 +239,6 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
                     _buildSelectableChip(
                       label: 'In-House',
                       isSelected: _selectedStatus == GuestStatus.inHouse,
-                      color: AppColors.statusSuccess,
                       onTap: () {
                         setState(() {
                           _selectedStatus = _selectedStatus == GuestStatus.inHouse ? null : GuestStatus.inHouse;
@@ -295,45 +248,13 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
                     _buildSelectableChip(
                       label: 'Checked-Out',
                       isSelected: _selectedStatus == GuestStatus.checkedOut,
-                      color: AppColors.primary,
                       onTap: () {
                         setState(() {
                           _selectedStatus = _selectedStatus == GuestStatus.checkedOut ? null : GuestStatus.checkedOut;
                         });
                       },
                     ),
-                    _buildSelectableChip(
-                      label: 'Cancelled',
-                      isSelected: _selectedStatus == GuestStatus.cancelled,
-                      color: AppColors.statusError,
-                      onTap: () {
-                        setState(() {
-                          _selectedStatus = _selectedStatus == GuestStatus.cancelled ? null : GuestStatus.cancelled;
-                        });
-                      },
-                    ),
                   ],
-                ),
-
-                const SizedBox(height: 24),
-                // PAYMENT SECTION
-                _buildSectionHeader('PAYMENT STATUS'),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _paymentStatuses.map((pay) {
-                    final isSelected = _selectedPaymentStatus == pay;
-                    return _buildSelectableChip(
-                      label: pay,
-                      isSelected: isSelected,
-                      onTap: () {
-                        setState(() {
-                          _selectedPaymentStatus = isSelected ? null : pay;
-                        });
-                      },
-                    );
-                  }).toList(),
                 ),
               ],
             ),
@@ -341,7 +262,7 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
 
           // Bottom Action Bar
           Container(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             decoration: const BoxDecoration(
               color: Colors.white,
               border: Border(top: BorderSide(color: AppColors.borderSubtle)),
@@ -352,13 +273,17 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
                   flex: 1,
                   child: OutlinedButton(
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       side: const BorderSide(color: AppColors.borderSubtle),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    onPressed: _clearAll,
+                    onPressed: () {
+                      _clearAll();
+                      widget.onApply(const AdvancedFiltersData());
+                      Navigator.of(context).pop();
+                    },
                     child: const Text(
                       'Clear',
                       style: TextStyle(
@@ -377,7 +302,7 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.white,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -434,7 +359,7 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
             color: AppColors.neutral700,
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         Container(
           decoration: BoxDecoration(
             color: AppColors.neutral100,
@@ -456,7 +381,7 @@ class _AdvancedFilterBottomSheetState extends State<AdvancedFilterBottomSheet> {
               ),
               prefixIcon: Icon(icon, size: 18, color: AppColors.neutral500),
               isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               border: InputBorder.none,
             ),
           ),

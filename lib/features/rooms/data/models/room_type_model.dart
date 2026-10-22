@@ -19,6 +19,14 @@ class RoomTypeModel {
   final bool isDeleted;
   final String? createdAt;
   final String? updatedAt;
+  final bool hasStatusCounts;
+  final int availableCount;
+  final int reservedCount;
+  final int occupiedCount;
+  final int cleaningCount;
+  final int maintenanceCount;
+  final int blockedCount;
+  final int totalRoomCount;
 
   const RoomTypeModel({
     required this.id,
@@ -41,6 +49,14 @@ class RoomTypeModel {
     this.isDeleted = false,
     this.createdAt,
     this.updatedAt,
+    this.hasStatusCounts = false,
+    this.availableCount = 0,
+    this.reservedCount = 0,
+    this.occupiedCount = 0,
+    this.cleaningCount = 0,
+    this.maintenanceCount = 0,
+    this.blockedCount = 0,
+    this.totalRoomCount = 0,
   });
 
   factory RoomTypeModel.fromJson(Map<String, dynamic> json) {
@@ -64,14 +80,17 @@ class RoomTypeModel {
       imagesList.addAll(rawImages.map((e) => e.toString()));
     }
 
+    final countsRaw = json['room_status_counts'] ?? json['roomStatusCounts'];
+    final counts = countsRaw is Map ? Map<String, dynamic>.from(countsRaw) : null;
+
     return RoomTypeModel(
-      id: json['_id']?.toString() ?? json['id']?.toString() ?? '',
-      hotel: json['hotel']?.toString() ?? '',
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      hotel: (json['hotel'] ?? json['hotel_id'] ?? '').toString(),
       name: json['name']?.toString() ?? 'Standard Room',
       description: json['description']?.toString() ?? '',
-      basePrice: (json['basePrice'] as num?)?.toDouble() ?? 0.0,
-      bedCount: (json['bedCount'] as num?)?.toInt() ?? 1,
-      bedType: json['bedType']?.toString() ?? '1 King Size Bed',
+      basePrice: (json['basePrice'] ?? json['base_price'] as num?)?.toDouble() ?? 0.0,
+      bedCount: (json['bedCount'] ?? json['bed_count'] as num?)?.toInt() ?? 1,
+      bedType: json['bedType']?.toString() ?? json['bed_type']?.toString() ?? '1 King Size Bed',
       adults: adults,
       children: children,
       gstEnabled: json['gstEnabled'] as bool? ?? true,
@@ -81,11 +100,31 @@ class RoomTypeModel {
       taxInclusive: json['taxInclusive'] as bool? ?? false,
       amenities: amenitiesList,
       images: imagesList,
-      isActive: json['isActive'] as bool? ?? true,
-      isDeleted: json['isDeleted'] as bool? ?? false,
-      createdAt: json['createdAt']?.toString(),
-      updatedAt: json['updatedAt']?.toString(),
+      isActive: json['isActive'] as bool? ?? (json['deleted_at'] == null),
+      isDeleted: json['isDeleted'] as bool? ?? (json['deleted_at'] != null),
+      createdAt: json['createdAt']?.toString() ?? json['created_at']?.toString(),
+      updatedAt: json['updatedAt']?.toString() ?? json['updated_at']?.toString(),
+      hasStatusCounts: counts != null,
+      availableCount: _count(counts?['available_count'] ?? counts?['availableCount']),
+      reservedCount: _count(counts?['reserved_count'] ?? counts?['reservedCount']),
+      occupiedCount: _count(counts?['occupied_count'] ?? counts?['occupiedCount']),
+      cleaningCount: _count(counts?['cleaning_count'] ?? counts?['cleaningCount']),
+      maintenanceCount: _count(counts?['maintenance_count'] ?? counts?['maintenanceCount']),
+      blockedCount: _count(counts?['blocked_count'] ?? counts?['blockedCount']),
+      totalRoomCount: _count(counts?['total_room_count'] ?? counts?['totalRoomCount']),
     );
+  }
+
+  static List<RoomTypeModel> listFromResponse(Map<String, dynamic> json) {
+    final data = json['data'];
+    final raw = data is Map ? (data['room_categories'] ?? data['roomCategories']) : data;
+    if (raw is! List) return const [];
+    return raw.whereType<Map>().map((item) => RoomTypeModel.fromJson(Map<String, dynamic>.from(item))).toList();
+  }
+
+  static int _count(dynamic value) {
+    if (value is num) return value.round();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   Map<String, dynamic> toJson() {
@@ -113,6 +152,39 @@ class RoomTypeModel {
       if (createdAt != null) 'createdAt': createdAt,
       if (updatedAt != null) 'updatedAt': updatedAt,
     };
+  }
+
+  RoomTypeModel withStatusCounts(RoomTypeModel counts) {
+    return RoomTypeModel(
+      id: id,
+      hotel: hotel,
+      name: name,
+      description: description,
+      basePrice: basePrice,
+      bedCount: bedCount,
+      bedType: bedType,
+      adults: adults,
+      children: children,
+      gstEnabled: gstEnabled,
+      gstRate: gstRate,
+      cgstRate: cgstRate,
+      sgstRate: sgstRate,
+      taxInclusive: taxInclusive,
+      amenities: amenities,
+      images: images,
+      isActive: isActive,
+      isDeleted: isDeleted,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      hasStatusCounts: true,
+      availableCount: counts.availableCount,
+      reservedCount: counts.reservedCount,
+      occupiedCount: counts.occupiedCount,
+      cleaningCount: counts.cleaningCount,
+      maintenanceCount: counts.maintenanceCount,
+      blockedCount: counts.blockedCount,
+      totalRoomCount: counts.totalRoomCount,
+    );
   }
 
   /// Default fallback rate resolution if basePrice is 0, matching the screenshot specifications

@@ -7,6 +7,7 @@ enum AuthStatus {
   authenticated,
   unauthenticated,
   failure,
+  forgotPasswordSuccess,
 }
 
 class AuthState extends Equatable {
@@ -27,6 +28,7 @@ class AuthState extends Equatable {
   bool get isLoading => status == AuthStatus.loading;
   bool get isAuthenticated => status == AuthStatus.authenticated;
   bool get isFailure => status == AuthStatus.failure;
+  bool get isForgotPasswordSuccess => status == AuthStatus.forgotPasswordSuccess;
 
   AuthState copyWith({
     AuthStatus? status,

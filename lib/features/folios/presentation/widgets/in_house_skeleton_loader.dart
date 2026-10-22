@@ -20,7 +20,7 @@ class _InHouseSkeletonLoaderState extends State<InHouseSkeletonLoader>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
-    _animation = Tween<double>(begin: 0.35, end: 0.85).animate(
+    _animation = Tween<double>(begin: 0.35, end: 0.70).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
   }
@@ -43,11 +43,7 @@ class _InHouseSkeletonLoaderState extends State<InHouseSkeletonLoader>
           width: width,
           height: height,
           decoration: BoxDecoration(
-            color: Color.lerp(
-              const Color(0xFFE2E8F0),
-              const Color(0xFFCBD5E1),
-              _animation.value,
-            ),
+            color: AppColors.neutral200.withValues(alpha: _animation.value),
             borderRadius: BorderRadius.circular(borderRadius),
           ),
         );
