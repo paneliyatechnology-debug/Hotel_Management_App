@@ -5,9 +5,8 @@ class ApiConstants {
   /// Base API URL for backend services
   static const String baseUrl = '$origin/api/v1';
 
-  /// Socket.IO origin. Postman connects to this host and listens for
-  /// `room:status` and `room:status_breakdown`.
-  static const String socketOrigin = origin;
+  /// Live Socket.IO host — same as Postman `{{baseUrl}}`.
+  static const String socketOrigin = 'https://api.myownpms.com';
 
   // ---------------------------------------------------------------------------
   // Authentication Endpoints

@@ -7,6 +7,8 @@ import '../../../../core/socket/room_live_socket.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../auth/presentation/bloc/auth_state.dart';
+import '../../../guests/presentation/bloc/guests_bloc.dart';
+import '../../../guests/presentation/bloc/guests_event.dart';
 import '../../../rooms/data/models/room_model.dart';
 import '../../data/models/admin_dashboard_model.dart';
 import '../../data/models/room_live_update.dart';
@@ -29,6 +31,7 @@ class RoomLiveBinder extends StatefulWidget {
 class _RoomLiveBinderState extends State<RoomLiveBinder> with WidgetsBindingObserver {
   final RoomLiveSocket _socket = RoomLiveSocket();
   Timer? _refreshTimer;
+  Timer? _guestsTimer;
 
   @override
   void initState() {
@@ -45,6 +48,7 @@ class _RoomLiveBinderState extends State<RoomLiveBinder> with WidgetsBindingObse
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _refreshTimer?.cancel();
+    _guestsTimer?.cancel();
     _socket.disconnect();
     super.dispose();
   }
@@ -64,31 +68,89 @@ class _RoomLiveBinderState extends State<RoomLiveBinder> with WidgetsBindingObse
 
   void _onSocketEvent(String name, dynamic data) {
     if (!mounted) return;
+    // Apply immediately. Waiting for post-frame while the UI is idle never runs.
+    _handleSocketEvent(name, data);
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  void _handleSocketEvent(String name, dynamic data) {
     final bloc = context.read<DashboardBloc>();
     bloc.repository.acceptRemoteRoomStatuses();
+
     switch (name) {
       case 'room:status':
+        _applyRoomStatus(bloc, data);
+        _scheduleRoomsRefresh();
+        break;
       case 'room:status_breakdown':
-        for (final update in parseRoomLivePayload(data)) {
-          if (update.isEmpty) continue;
-          applyLiveRoomData(update, bloc.state.allRooms);
-          bloc.add(LiveRoomSyncEvent(update));
-        }
+        _applyRoomBreakdown(bloc, data);
+        break;
       case 'room:category_counts':
-        bloc.add(ApplyCategoryCountsEvent(data));
+        _applyCategoryCounts(bloc, data);
+        break;
       case 'booking:updated':
         bloc.add(ApplyLiveBookingEvent(data));
+        _scheduleGuestsRefresh();
+        _scheduleRoomsRefresh();
+        break;
       case 'dashboard:updated':
         _applyDashboardSnapshot(data);
         bloc.add(ApplyLiveDashboardEvent(data));
+        break;
       default:
         return;
     }
+  }
+
+  void _applyRoomStatus(DashboardBloc bloc, dynamic data) {
+    for (final update in parseRoomLivePayload(data)) {
+      if (update.isEmpty) continue;
+      applyLiveRoomData(update, bloc.state.allRooms);
+      RoomLiveHub.instance.publish(update);
+      bloc.add(LiveRoomSyncEvent(update));
+    }
+  }
+
+  void _applyRoomBreakdown(DashboardBloc bloc, dynamic data) {
+    for (final update in parseRoomLivePayload(data)) {
+      if (update.breakdown == null) continue;
+      applyLiveRoomData(update, bloc.state.allRooms);
+      RoomLiveHub.instance.publish(update);
+      bloc.add(LiveRoomSyncEvent(update));
+    }
+  }
+
+  void _applyCategoryCounts(DashboardBloc bloc, dynamic data) {
+    bloc.add(ApplyCategoryCountsEvent(data));
+    final payload = socketObject(data);
+    if (payload == null) return;
+    final summary = payload['room_status_summary'] ?? payload['roomStatusSummary'];
+    if (summary is! Map) return;
+    final breakdown = RoomBreakdown.tryParse(Map<String, dynamic>.from(summary));
+    if (breakdown == null) return;
+    final update = RoomLiveUpdate(breakdown: breakdown);
+    applyLiveRoomData(update, bloc.state.allRooms);
+    RoomLiveHub.instance.publish(update);
+    bloc.add(LiveRoomSyncEvent(update));
+  }
+
+  void _scheduleRoomsRefresh() {
     _refreshTimer?.cancel();
-    _refreshTimer = Timer(const Duration(milliseconds: 250), () {
+    _refreshTimer = Timer(const Duration(milliseconds: 1200), () {
       if (!mounted) return;
       context.read<DashboardBloc>().add(QuietRefreshLiveRoomsEvent());
-      RoomLiveHub.instance.requestRefresh();
+    });
+  }
+
+  void _scheduleGuestsRefresh() {
+    _guestsTimer?.cancel();
+    _guestsTimer = Timer(const Duration(milliseconds: 200), () {
+      if (!mounted) return;
+      try {
+        context.read<GuestsBloc>().add(const RefreshGuestsEvent());
+      } catch (_) {
+        // GuestsBloc may be missing in isolated tests.
+      }
     });
   }
 
@@ -96,8 +158,14 @@ class _RoomLiveBinderState extends State<RoomLiveBinder> with WidgetsBindingObse
     final payload = socketObject(data);
     if (payload == null) return;
     final body = payload['data'] is Map ? Map<String, dynamic>.from(payload['data'] as Map) : payload;
-    if (!body.containsKey('kpis') && !body.containsKey('hotel')) return;
-    AdminDashboardMemory.snapshot = AdminDashboardSnapshot.fromJson(body);
+    if (!body.containsKey('kpis') && !body.containsKey('hotel') && !body.containsKey('room_status_summary')) {
+      return;
+    }
+    try {
+      AdminDashboardMemory.snapshot = AdminDashboardSnapshot.fromJson(body);
+    } catch (_) {
+      // Front-desk dashboard payloads do not always match the admin model.
+    }
   }
 
   @override
@@ -107,7 +175,12 @@ class _RoomLiveBinderState extends State<RoomLiveBinder> with WidgetsBindingObse
       listener: (context, state) {
         if (state.isAuthenticated) {
           _socket.setDashboardRange(RoomLiveSocket.dashboardRangeForRole(state.user?.role ?? ''));
-          _socket.connect(context.read<AuthBloc>().repository);
+          // Token is saved before AuthStatus.authenticated; connect on the next frame.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (!context.read<AuthBloc>().state.isAuthenticated) return;
+            _socket.connect(context.read<AuthBloc>().repository);
+          });
           return;
         }
         if (state.status == AuthStatus.unauthenticated) {
@@ -127,16 +200,15 @@ void applyLiveRoomData(RoomLiveUpdate update, List<RoomModel> knownRooms) {
     previous = _findRoom(patch, knownRooms) ??
         _findRoom(patch, RoomsDirectoryMemory.rooms ?? const []) ??
         _findRoom(patch, StatusRoomsMemory.roomsByStatus.values.expand((rooms) => rooms));
-    if (previous != null) {
-      if (patch.removed) {
-        final directory = RoomsDirectoryMemory.rooms;
-        if (directory != null) {
-          RoomsDirectoryMemory.rooms = directory.where((room) => !patch.matches(room)).toList();
-        }
-        for (final rooms in StatusRoomsMemory.roomsByStatus.values) {
-          rooms.removeWhere(patch.matches);
-        }
-      } else {
+    if (patch.removed) {
+      final directory = RoomsDirectoryMemory.rooms;
+      if (directory != null) {
+        RoomsDirectoryMemory.rooms = directory.where((room) => !patch.matches(room)).toList();
+      }
+      for (final rooms in StatusRoomsMemory.roomsByStatus.values) {
+        rooms.removeWhere(patch.matches);
+      }
+    } else if (previous != null) {
       final updated = patch.apply([previous]).single;
       final directory = RoomsDirectoryMemory.rooms;
       if (directory != null) {
@@ -145,7 +217,20 @@ void applyLiveRoomData(RoomLiveUpdate update, List<RoomModel> knownRooms) {
       for (final rooms in StatusRoomsMemory.roomsByStatus.values) {
         rooms.removeWhere(patch.matches);
       }
+      StatusRoomsMemory.roomsByStatus.putIfAbsent(patch.cacheKey, () => <RoomModel>[]);
       StatusRoomsMemory.roomsByStatus[patch.cacheKey]?.insert(0, updated);
+    } else {
+      final created = patch.toRoomModel();
+      if (created != null) {
+        final directory = RoomsDirectoryMemory.rooms;
+        if (directory != null) {
+          RoomsDirectoryMemory.rooms = [created, ...directory.where((room) => !patch.matches(room))];
+        }
+        for (final rooms in StatusRoomsMemory.roomsByStatus.values) {
+          rooms.removeWhere(patch.matches);
+        }
+        StatusRoomsMemory.roomsByStatus.putIfAbsent(patch.cacheKey, () => <RoomModel>[]);
+        StatusRoomsMemory.roomsByStatus[patch.cacheKey]?.insert(0, created);
       }
     }
   }

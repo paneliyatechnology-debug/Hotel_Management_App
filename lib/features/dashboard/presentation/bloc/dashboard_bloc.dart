@@ -48,9 +48,10 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         folios: folios,
         allRooms: rooms,
         filteredRooms: _applyFilters(rooms, state.searchQuery, state.selectedFloor, state.selectedStatus),
+        clearSuccess: true,
       ));
     } catch (_) {
-      emit(state.copyWith(status: DashboardStatus.loaded));
+      emit(state.copyWith(status: DashboardStatus.loaded, clearSuccess: true));
     }
   }
 
@@ -113,6 +114,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         roomTypes: roomTypes,
         folios: folios,
         stats: stats,
+        clearSuccess: true,
       ));
     } catch (e) {
       final cleanMsg = e.toString().replaceFirst('Exception: ', '');
@@ -131,8 +133,13 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     try {
       final folios = await repository.getFolios();
       final rooms = await repository.getRooms();
-      final roomTypes = await repository.getRoomTypes();
       final stats = await repository.getStats();
+      var roomTypes = state.roomTypes;
+      try {
+        roomTypes = await repository.getRoomTypes();
+      } catch (_) {
+        // Keep cached categories if /room-types is slow or fails mid-refresh.
+      }
 
       final filtered = _applyFilters(rooms, state.searchQuery, state.selectedFloor, state.selectedStatus);
 
@@ -143,7 +150,8 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
         roomTypes: roomTypes,
         folios: folios,
         stats: stats,
-        successMessage: 'Room categories retrieved successfully.',
+        // Silent refresh — do not toast on every category / pull-to-refresh.
+        clearSuccess: true,
       ));
     } catch (e) {
       final cleanMsg = e.toString().replaceFirst('Exception: ', '');
@@ -166,7 +174,7 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
               (room) => room != null && patch.matches(room),
               orElse: () => null,
             );
-    final rooms = patch == null ? state.allRooms : patch.apply(state.allRooms);
+    final rooms = repository.applyLiveRoomUpdate(event.update);
     final counts = event.update.breakdown;
     var stats = state.stats;
     if (counts != null) {
@@ -202,14 +210,15 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
       final folios = await repository.getFolios();
       final rooms = await repository.getRooms();
       final stats = await repository.getStats();
-      final roomTypes = await repository.getRoomTypes();
+      // Do not re-fetch room-types here — live ticks were hammering /room-types
+      // and stacking snackbars. Categories stay on the last loaded list.
       emit(state.copyWith(
         status: DashboardStatus.loaded,
         allRooms: rooms,
         filteredRooms: _applyFilters(rooms, state.searchQuery, state.selectedFloor, state.selectedStatus),
-        roomTypes: roomTypes,
         folios: folios,
         stats: stats,
+        clearSuccess: true,
       ));
     } catch (_) {
       // Keep the rooms already on screen if the refresh fails.
@@ -241,20 +250,41 @@ class DashboardBloc extends Bloc<DashboardEvent, DashboardState> {
     final payload = socketObject(event.data);
     if (payload == null) return;
     final raw = payload['room_categories'] ?? payload['roomCategories'];
-    if (raw is! List || state.roomTypes.isEmpty) return;
-    final countsById = <String, RoomTypeModel>{};
-    for (final item in raw) {
-      if (item is! Map) continue;
-      final parsed = RoomTypeModel.fromJson(Map<String, dynamic>.from(item));
-      if (parsed.id.isEmpty) continue;
-      countsById[parsed.id] = parsed;
+    var roomTypes = state.roomTypes;
+    if (raw is List) {
+      final countsById = <String, RoomTypeModel>{};
+      for (final item in raw) {
+        if (item is! Map) continue;
+        final parsed = RoomTypeModel.fromJson(Map<String, dynamic>.from(item));
+        if (parsed.id.isEmpty) continue;
+        countsById[parsed.id] = parsed;
+      }
+      if (countsById.isNotEmpty) {
+        if (roomTypes.isEmpty) {
+          roomTypes = countsById.values.toList();
+        } else {
+          roomTypes = [
+            for (final type in roomTypes)
+              countsById[type.id] == null ? type : type.withStatusCounts(countsById[type.id]!),
+          ];
+        }
+      }
     }
-    if (countsById.isEmpty) return;
-    final roomTypes = [
-      for (final type in state.roomTypes)
-        countsById[type.id] == null ? type : type.withStatusCounts(countsById[type.id]!),
-    ];
-    emit(state.copyWith(roomTypes: roomTypes));
+    final summary = payload['room_status_summary'] ?? payload['roomStatusSummary'];
+    var stats = state.stats;
+    if (summary is Map) {
+      final breakdown = RoomBreakdown.tryParse(Map<String, dynamic>.from(summary));
+      if (breakdown != null) {
+        stats = stats.copyWith(
+          availableVacant: breakdown.available ?? stats.availableVacant,
+          occupiedInHouse: breakdown.occupied ?? stats.occupiedInHouse,
+          housekeepingQueue: breakdown.cleaning ?? stats.housekeepingQueue,
+          maintenanceBlocked: breakdown.maintenanceBlocked ?? stats.maintenanceBlocked,
+          totalInHouseGuests: breakdown.guests ?? stats.totalInHouseGuests,
+        );
+      }
+    }
+    emit(state.copyWith(roomTypes: roomTypes, stats: stats));
   }
 
   void _onApplyLiveDashboard(

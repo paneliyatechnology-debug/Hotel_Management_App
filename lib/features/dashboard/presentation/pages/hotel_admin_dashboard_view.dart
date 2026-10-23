@@ -115,7 +115,6 @@ class HotelAdminDashboardViewState extends State<HotelAdminDashboardView> {
         _loadingDashboard = false;
       });
     }
-    _loadAdminDashboard();
   }
 
   @override

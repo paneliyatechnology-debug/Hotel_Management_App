@@ -73,7 +73,17 @@ class _AdminRoomsTariffsPageState extends State<AdminRoomsTariffsPage> with Sing
 
   void _onLiveRooms() {
     if (!mounted) return;
-    _loadData(showLoader: false);
+    // Apply the live room patch only. Do not re-fetch room-types on every
+    // socket tick — that spammed the category API and stacked snackbars.
+    final patch = RoomLiveHub.instance.room;
+    final cached = RoomsDirectoryMemory.rooms;
+    if (patch == null || cached == null) return;
+    final next = patch.apply(List<RoomModel>.from(cached));
+    RoomsDirectoryMemory.rooms = next;
+    setState(() {
+      _rooms = next;
+      _isLoading = false;
+    });
   }
 
   @override
@@ -83,7 +93,11 @@ class _AdminRoomsTariffsPageState extends State<AdminRoomsTariffsPage> with Sing
     super.dispose();
   }
 
+  bool _loadInFlight = false;
+
   Future<void> _loadData({bool? showLoader}) async {
+    if (_loadInFlight) return;
+    _loadInFlight = true;
     final loader = showLoader ?? (_rooms.isEmpty && RoomsDirectoryMemory.rooms == null);
     if (loader && mounted) {
       setState(() {
@@ -113,15 +127,17 @@ class _AdminRoomsTariffsPageState extends State<AdminRoomsTariffsPage> with Sing
     } catch (e) {
       if (!mounted) return;
       final err = e.toString().replaceAll('Exception: ', '');
+      // Only surface errors on the first full-screen load — never toast on background refresh.
       if (loader) {
         setState(() {
           _errorMessage = err;
           _isLoading = false;
         });
-      } else {
+      } else if (mounted) {
         setState(() => _isLoading = false);
-        _showToast(err, isError: true);
       }
+    } finally {
+      _loadInFlight = false;
     }
   }
 

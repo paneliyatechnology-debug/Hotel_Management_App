@@ -79,9 +79,9 @@ class _SignaturePadWidgetState extends State<SignaturePadWidget> {
       final file = await ImagePicker().pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.rear,
-        maxWidth: 1600,
-        maxHeight: 900,
-        imageQuality: 90,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 70,
       );
       if (file == null) return;
       setState(() {

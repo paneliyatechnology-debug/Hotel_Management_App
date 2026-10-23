@@ -61,7 +61,48 @@ class _StatusRoomsPageState extends State<StatusRoomsPage> {
 
   void _onLiveRooms() {
     if (!mounted) return;
-    _loadRooms(showLoader: false);
+    final patch = RoomLiveHub.instance.room;
+    final cached = StatusRoomsMemory.roomsByStatus[widget.status];
+    if (patch != null && cached != null) {
+      List<RoomModel> visible;
+      if (patch.removed) {
+        visible = cached.where((room) => !patch.matches(room)).toList();
+      } else {
+        visible = [
+          for (final room in patch.apply(List<RoomModel>.from(cached)))
+            if (_roomMatchesPage(room)) room,
+        ];
+        // Room moved onto this status page from another list.
+        if (_roomMatchesPageStatus(patch.status) && !visible.any(patch.matches)) {
+          final created = patch.toRoomModel();
+          if (created != null) visible = [created, ...visible];
+        }
+      }
+      StatusRoomsMemory.roomsByStatus[widget.status] = visible;
+      setState(() {
+        _rooms = visible;
+        _isLoading = false;
+      });
+      return;
+    }
+    // No live patch — avoid hammering the rooms API on every hub tick.
+  }
+
+  bool _roomMatchesPage(RoomModel room) => _roomMatchesPageStatus(room.status);
+
+  bool _roomMatchesPageStatus(RoomStatus status) {
+    switch (widget.status.toUpperCase()) {
+      case 'AVAILABLE':
+        return status == RoomStatus.available;
+      case 'OCCUPIED':
+        return status == RoomStatus.occupied;
+      case 'CLEANING':
+        return status == RoomStatus.cleaning;
+      case 'MAINTENANCE':
+        return status == RoomStatus.maintenance;
+      default:
+        return true;
+    }
   }
 
   @override

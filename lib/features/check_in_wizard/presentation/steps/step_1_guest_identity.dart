@@ -218,9 +218,9 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
       final file = await ImagePicker().pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.rear,
-        maxWidth: 1600,
-        maxHeight: 900,
-        imageQuality: 90,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 70,
       );
       if (file == null || !mounted) return;
       _keepSignature(photoPath: file.path);
@@ -499,9 +499,9 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
       final XFile? file = await ImagePicker().pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.rear,
-        maxWidth: 1920,
-        maxHeight: 1440,
-        imageQuality: 90,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 70,
       );
       if (file == null) return const [];
       return [file.path];
@@ -559,9 +559,9 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
 
     try {
       picked = await picker.pickMultiImage(
-        maxWidth: 1920,
-        maxHeight: 1440,
-        imageQuality: 90,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 70,
       );
     } catch (e) {
       if (mounted) {
@@ -815,9 +815,9 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                                 final picker = ImagePicker();
                                 try {
                                   final List<XFile> more = await picker.pickMultiImage(
-                                    maxWidth: 1920,
-                                    maxHeight: 1440,
-                                    imageQuality: 90,
+                                    maxWidth: 1280,
+                                    maxHeight: 1280,
+                                    imageQuality: 70,
                                   );
                                   if (more.isNotEmpty) {
                                     setModalState(() {

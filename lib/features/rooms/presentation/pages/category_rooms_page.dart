@@ -9,6 +9,7 @@ import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../check_in_wizard/presentation/bloc/check_in_bloc.dart';
 import '../../../check_in_wizard/presentation/bloc/check_in_event.dart';
 import '../../../check_in_wizard/presentation/pages/check_in_wizard_page.dart';
+import '../../../dashboard/data/models/booking_list_query.dart';
 import '../../../dashboard/data/models/guest_folio_model.dart';
 import '../../../dashboard/presentation/bloc/dashboard_bloc.dart';
 import '../../../dashboard/presentation/bloc/dashboard_event.dart';
@@ -38,6 +39,24 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
   String _searchQuery = '';
   bool _isSearchOpen = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final folios = context.read<DashboardBloc>().state.folios;
+      final hasInHouse = folios.any((folio) => folio.status == FolioStatus.inHouse);
+      if (hasInHouse) return;
+      // Only fetch when In-House list is empty — avoids repeat category API churn.
+      context.read<DashboardBloc>().add(
+            LoadBookingsEvent(
+              query: const BookingListQuery(bookingStatus: 'CHECKED_IN', limit: 50),
+              showLoading: false,
+            ),
+          );
+    });
+  }
+
   void _openGuestForm(RoomModel room) {
     context.read<CheckInBloc>().add(InitCheckInWizardEvent(preselectedRoom: room));
     Navigator.of(context).push(
@@ -48,7 +67,8 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
   }
 
   Future<void> _openUpdateBooking(RoomModel room) async {
-    final folio = _checkedInFolioFor(room, context.read<DashboardBloc>().state.folios);
+    final folio = await _resolveInHouseFolio(room);
+    if (!mounted) return;
     if (folio == null) {
       AppSnackBar.showError(context, 'No checked-in guest was found for this room.', title: 'Update booking');
       return;
@@ -99,8 +119,9 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
     return '';
   }
 
-  void _checkoutOccupiedRoom(RoomModel room) {
-    final folio = _checkedInFolioFor(room, context.read<DashboardBloc>().state.folios);
+  Future<void> _checkoutOccupiedRoom(RoomModel room) async {
+    final folio = await _resolveInHouseFolio(room);
+    if (!mounted) return;
     if (folio == null) {
       AppSnackBar.showError(
         context,
@@ -112,6 +133,26 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
     CheckoutSettlementDialog.show(context, folio);
   }
 
+  Future<GuestFolioModel?> _resolveInHouseFolio(RoomModel room) async {
+    final bloc = context.read<DashboardBloc>();
+    final local = _checkedInFolioFor(room, bloc.state.folios);
+    if (local != null) return local;
+    final repo = bloc.repository;
+    try {
+      final byRoom = await repo.fetchBookings(
+        status: 'CHECKED_IN',
+        roomId: room.id,
+        limit: 50,
+      );
+      final matched = _checkedInFolioFor(room, byRoom);
+      if (matched != null) return matched;
+      final allInHouse = await repo.fetchBookings(status: 'CHECKED_IN', limit: 50);
+      return _checkedInFolioFor(room, allInHouse);
+    } catch (_) {
+      return null;
+    }
+  }
+
   GuestFolioModel? _checkedInFolioFor(RoomModel room, List<GuestFolioModel> folios) {
     final roomDigits = room.roomNumber.replaceAll(RegExp(r'[^0-9]'), '');
     for (final folio in folios) {
@@ -120,6 +161,9 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
       if (folioId != null &&
           folioId.isNotEmpty &&
           (folio.id == folioId || folio.bookingId == folioId)) {
+        return folio;
+      }
+      if (room.id.isNotEmpty && folio.roomId != null && folio.roomId == room.id) {
         return folio;
       }
       final folioRoom = folio.assignedRoom.replaceAll(RegExp(r'[^0-9]'), '');
@@ -161,7 +205,8 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
   Widget build(BuildContext context) {
     return BlocBuilder<DashboardBloc, DashboardState>(
       builder: (context, state) {
-        // Filter rooms matching this category ID or category name
+        // Filter rooms matching this category ID or category name.
+        // Trust rooms API status: OCCUPIED → Edit + Checkout buttons.
         final categoryRooms = state.allRooms.where((r) {
           if (widget.roomTypeId != null && widget.roomTypeId!.isNotEmpty && r.roomTypeId == widget.roomTypeId) {
             return true;
@@ -170,8 +215,8 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
         }).toList();
 
         final totalCount = categoryRooms.length;
-        final availableCount = categoryRooms.where((r) => r.status == RoomStatus.available).length;
         final occupiedCount = categoryRooms.where((r) => r.status == RoomStatus.occupied).length;
+        final availableCount = categoryRooms.where((r) => r.status == RoomStatus.available).length;
         final cleaningCount = categoryRooms.where((r) => r.status == RoomStatus.cleaning).length;
         final maintenanceCount = categoryRooms.where((r) => r.status == RoomStatus.maintenance).length;
 
@@ -533,8 +578,9 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
   }
 
   Widget _buildRoomCard(BuildContext context, RoomModel room, List<GuestFolioModel> folios) {
-    final isAvailable = room.status == RoomStatus.available;
+    // Rooms API `status: OCCUPIED` → show Edit + Checkout.
     final isOccupied = room.status == RoomStatus.occupied;
+    final isAvailable = room.status == RoomStatus.available;
     final isCleaning = room.status == RoomStatus.cleaning;
     final isMaintenance = room.status == RoomStatus.maintenance;
 

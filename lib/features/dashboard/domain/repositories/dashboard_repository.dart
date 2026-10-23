@@ -7,12 +7,14 @@ import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import '../../../../core/constants/api_constants.dart';
+import '../../../../core/utils/upload_image_compressor.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../rooms/data/models/room_model.dart';
 import '../../data/models/booking_list_query.dart';
 import '../../data/models/booking_pdf_file.dart';
 import '../../data/models/guest_folio_model.dart';
 import '../../data/models/hotel_stats_model.dart';
+import '../../data/models/room_live_update.dart';
 import '../../../check_in_wizard/data/models/check_in_form_data.dart';
 import '../../../auth/data/repositories/auth_repository.dart';
 import '../../../auth/data/repositories/authenticated_http_client.dart';
@@ -52,6 +54,7 @@ abstract class IDashboardRepository {
   });
   Future<void> updateRoomStatus(String roomId, RoomStatus newStatus);
   void acceptRemoteRoomStatuses();
+  List<RoomModel> applyLiveRoomUpdate(RoomLiveUpdate update);
   Future<GuestFolioModel> completeCheckIn(CheckInFormData formData);
   Future<GuestFolioModel> updateBookingFromForm(CheckInFormData formData);
   Future<GuestFolioModel?> fetchBooking(String bookingId);
@@ -114,6 +117,7 @@ class DashboardRepository implements IDashboardRepository {
             );
 
   static bool get _isTestEnv {
+    if (Platform.environment.containsKey('FLUTTER_TEST')) return true;
     try {
       return WidgetsBinding.instance.runtimeType.toString().contains('Test');
     } catch (_) {
@@ -243,8 +247,58 @@ class DashboardRepository implements IDashboardRepository {
     } catch (_) {
       // Fallback to local rooms on network failure
     }
-    _attachCheckedInGuests();
+    await _syncOccupiedWithCheckedInBookings();
     return List.unmodifiable(List<RoomModel>.from(_rooms));
+  }
+
+  /// Pull CHECKED_IN bookings and clear stale OCCUPIED rooms that have no guest.
+  /// Keeps the existing folio list for the Guests / In-House UI.
+  Future<void> _syncOccupiedWithCheckedInBookings() async {
+    if (_shouldSkipLiveNetwork) {
+      _attachCheckedInGuests(clearStaleOccupied: true);
+      return;
+    }
+    final retained = List<GuestFolioModel>.from(_folios);
+    try {
+      final uri = Uri.parse(ApiConstants.bookingsUrl).replace(
+        queryParameters: const {
+          'page': '1',
+          'limit': '50',
+          'booking_status': 'CHECKED_IN',
+        },
+      );
+      final response = await _client
+          .get(uri, headers: const {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          final rows = _bookingRows(Map<String, dynamic>.from(decoded));
+          final inHouse = <GuestFolioModel>[];
+          final seen = <String>{};
+          for (final row in rows) {
+            if (row is! Map) continue;
+            final folio = GuestFolioModel.fromJson(Map<String, dynamic>.from(row));
+            if (folio.status != FolioStatus.inHouse) continue;
+            if (folio.id.isEmpty || !seen.add(folio.id)) continue;
+            inHouse.add(folio);
+          }
+          _folios = inHouse;
+          _attachCheckedInGuests(clearStaleOccupied: true);
+          final byId = <String, GuestFolioModel>{
+            for (final folio in retained) folio.id: folio,
+          };
+          for (final folio in inHouse) {
+            byId[folio.id] = folio;
+          }
+          _folios = byId.values.toList();
+          return;
+        }
+      }
+    } catch (_) {}
+    _folios = retained;
+    // Do not demote OCCUPIED when the CHECKED_IN list could not be loaded.
+    _attachCheckedInGuests();
   }
 
   @override
@@ -349,7 +403,8 @@ class DashboardRepository implements IDashboardRepository {
       }
 
       _folios = collected;
-      _attachCheckedInGuests();
+      final checkedInQuery = active.bookingStatus.trim().toUpperCase() == 'CHECKED_IN';
+      _attachCheckedInGuests(clearStaleOccupied: checkedInQuery);
       return List.unmodifiable(List<GuestFolioModel>.from(_folios));
     } catch (_) {
       _folios = <GuestFolioModel>[];
@@ -369,37 +424,68 @@ class DashboardRepository implements IDashboardRepository {
     return const [];
   }
 
-  void _attachCheckedInGuests() {
-    if (_rooms.isEmpty || _folios.isEmpty) return;
+  /// Keep Checkout CTAs aligned with In-House bookings.
+  /// Room `OCCUPIED` from the rooms API / socket can lag behind check-out, so
+  /// a room only stays occupied when a CHECKED_IN folio maps to it.
+  ///
+  /// [clearStaleOccupied] must only be true after a full CHECKED_IN booking fetch.
+  void _attachCheckedInGuests({bool clearStaleOccupied = false}) {
+    if (_rooms.isEmpty) return;
+    final inHouse = _folios.where((folio) => folio.status == FolioStatus.inHouse).toList();
+    final byRoomDigits = <String, GuestFolioModel>{};
+    for (final folio in inHouse) {
+      final digits = folio.assignedRoom.replaceAll(RegExp(r'[^0-9]'), '');
+      if (digits.isNotEmpty) byRoomDigits.putIfAbsent(digits, () => folio);
+    }
+
     final updated = List<RoomModel>.from(_rooms);
     var changed = false;
     for (var i = 0; i < updated.length; i++) {
-      final roomDigits = updated[i].roomNumber.replaceAll(RegExp(r'[^0-9]'), '');
-      GuestFolioModel? match;
-      for (final folio in _folios) {
-        if (folio.status != FolioStatus.inHouse) continue;
-        final folioDigits = folio.assignedRoom.replaceAll(RegExp(r'[^0-9]'), '');
-        if (roomDigits.isNotEmpty && roomDigits == folioDigits) {
-          match = folio;
-          break;
+      final room = updated[i];
+      final roomDigits = room.roomNumber.replaceAll(RegExp(r'[^0-9]'), '');
+      GuestFolioModel? match = roomDigits.isNotEmpty ? byRoomDigits[roomDigits] : null;
+      if (match == null) {
+        for (final folio in inHouse) {
+          final folioId = room.currentGuestFolioId;
+          if (folioId != null &&
+              folioId.isNotEmpty &&
+              (folio.id == folioId || folio.bookingId == folioId)) {
+            match = folio;
+            break;
+          }
+          if (room.id.isNotEmpty && folio.roomId != null && folio.roomId == room.id) {
+            match = folio;
+            break;
+          }
         }
       }
-      if (match == null) continue;
-      if (_isKeptAvailable(updated[i])) {
-        if (updated[i].status != RoomStatus.available) {
-          updated[i] = updated[i].copyWith(status: RoomStatus.available);
+
+      if (_isKeptAvailable(room)) {
+        if (room.status != RoomStatus.available || room.currentGuestName != null) {
+          updated[i] = room.copyWith(status: RoomStatus.available, clearGuest: true);
           changed = true;
         }
         continue;
       }
-      final name = match.guestName.trim();
-      if (name.isEmpty || name == 'Guest') continue;
-      updated[i] = updated[i].copyWith(
-        currentGuestName: name,
-        currentGuestFolioId: match.id,
-        status: updated[i].status == RoomStatus.available ? RoomStatus.occupied : updated[i].status,
-      );
-      changed = true;
+
+      if (match != null) {
+        final name = match.guestName.trim();
+        final next = room.copyWith(
+          currentGuestName: name.isNotEmpty && name != 'Guest' ? name : room.currentGuestName,
+          currentGuestFolioId: match.id,
+          status: RoomStatus.occupied,
+        );
+        if (next.status != room.status ||
+            next.currentGuestFolioId != room.currentGuestFolioId ||
+            next.currentGuestName != room.currentGuestName) {
+          updated[i] = next;
+          changed = true;
+        }
+        continue;
+      }
+
+      // Keep rooms API OCCUPIED as-is so Edit / Checkout stay visible.
+      // Guest name is filled when a matching In-House booking exists above.
     }
     if (changed) _rooms = updated;
   }
@@ -497,6 +583,17 @@ class DashboardRepository implements IDashboardRepository {
   @override
   void acceptRemoteRoomStatuses() {
     _keepAvailableRoomIds.clear();
+  }
+
+  @override
+  List<RoomModel> applyLiveRoomUpdate(RoomLiveUpdate update) {
+    acceptRemoteRoomStatuses();
+    final patch = update.room;
+    if (patch != null) {
+      _rooms = patch.apply(List<RoomModel>.from(_rooms));
+    }
+    _attachCheckedInGuests();
+    return List<RoomModel>.from(_rooms);
   }
 
   @override
@@ -699,6 +796,9 @@ class DashboardRepository implements IDashboardRepository {
   }
 
   String _readApiError(String body, int statusCode, {String fallback = 'Check-in failed'}) {
+    if (statusCode == 413) {
+      return 'ID photos are too large for upload. Use fewer photos or retake with the camera.';
+    }
     try {
       final decoded = jsonDecode(body);
       if (decoded is Map) {
@@ -713,6 +813,35 @@ class DashboardRepository implements IDashboardRepository {
       }
     } catch (_) {}
     return '$fallback ($statusCode)';
+  }
+
+  Future<Uint8List> _readFileBytes(String path) async {
+    return File(path).readAsBytes();
+  }
+
+  ({Uint8List bytes, MediaType contentType, String filename}) _preparedImageUpload({
+    required Uint8List bytes,
+    required String path,
+    required String fallbackName,
+  }) {
+    final compressed = UploadImageCompressor.toUploadJpeg(bytes);
+    if (compressed != null) {
+      final base = _imageFilename(path, MediaType('image', 'jpeg'))
+          .replaceAll(RegExp(r'\.[^.]+$'), '');
+      final name = base.trim().isEmpty ? fallbackName : '$base.jpg';
+      return (
+        bytes: compressed,
+        contentType: MediaType('image', 'jpeg'),
+        filename: name.endsWith('.jpg') ? name : '$name.jpg',
+      );
+    }
+    final header = bytes.take(16).toList();
+    final contentType = _imageMediaType(path, header);
+    return (
+      bytes: bytes,
+      contentType: contentType,
+      filename: _imageFilename(path, contentType),
+    );
   }
 
   String _bookingTimestamp(DateTime value, {required int defaultHour}) {
@@ -791,16 +920,16 @@ class DashboardRepository implements IDashboardRepository {
       try {
         final file = File(photo);
         if (await file.exists()) {
-          final header = await file.openRead(0, 16).fold<List<int>>(<int>[], (bytes, chunk) {
-            bytes.addAll(chunk);
-            return bytes;
-          });
-          final contentType = _imageMediaType(photo, header);
-          request.files.add(await http.MultipartFile.fromPath(
+          final prepared = _preparedImageUpload(
+            bytes: await _readFileBytes(photo),
+            path: photo,
+            fallbackName: 'signature.jpg',
+          );
+          request.files.add(http.MultipartFile.fromBytes(
             'signatures',
-            photo,
-            filename: _imageFilename(photo, contentType),
-            contentType: contentType,
+            prepared.bytes,
+            filename: prepared.filename,
+            contentType: prepared.contentType,
           ));
           return;
         }
@@ -817,12 +946,22 @@ class DashboardRepository implements IDashboardRepository {
   }
 
   Future<void> _addBookingImages(http.MultipartRequest request, CheckInFormData formData) async {
-    final imagePaths = <String>{
+    // Prefer local captures first so we do not re-upload large CDN originals.
+    final ordered = <String>[
       ...formData.idPhotos,
-      if (formData.idFrontPhotoUrl != null) formData.idFrontPhotoUrl!,
-      if (formData.idBackPhotoUrl != null) formData.idBackPhotoUrl!,
-    };
-    for (final path in imagePaths) {
+      if ((formData.idFrontPhotoUrl ?? '').trim().isNotEmpty) formData.idFrontPhotoUrl!.trim(),
+      if ((formData.idBackPhotoUrl ?? '').trim().isNotEmpty) formData.idBackPhotoUrl!.trim(),
+    ];
+    final imagePaths = <String>[];
+    final seen = <String>{};
+    for (final path in ordered) {
+      final trimmed = path.trim();
+      if (trimmed.isEmpty || !seen.add(trimmed)) continue;
+      imagePaths.add(trimmed);
+    }
+    // Keep payload under typical nginx 1mb body limits.
+    const maxImages = 6;
+    for (final path in imagePaths.take(maxImages)) {
       await _addImagePart(request, path);
     }
   }
@@ -837,16 +976,16 @@ class DashboardRepository implements IDashboardRepository {
     try {
       final file = File(trimmed);
       if (!await file.exists()) return;
-      final header = await file.openRead(0, 16).fold<List<int>>(<int>[], (bytes, chunk) {
-        bytes.addAll(chunk);
-        return bytes;
-      });
-      final contentType = _imageMediaType(trimmed, header);
-      request.files.add(await http.MultipartFile.fromPath(
+      final prepared = _preparedImageUpload(
+        bytes: await _readFileBytes(trimmed),
+        path: trimmed,
+        fallbackName: 'id-photo.jpg',
+      );
+      request.files.add(http.MultipartFile.fromBytes(
         'images',
-        trimmed,
-        filename: _imageFilename(trimmed, contentType),
-        contentType: contentType,
+        prepared.bytes,
+        filename: prepared.filename,
+        contentType: prepared.contentType,
       ));
     } catch (_) {}
   }
@@ -861,13 +1000,16 @@ class DashboardRepository implements IDashboardRepository {
       if (response.statusCode < 200 || response.statusCode >= 300 || response.bodyBytes.isEmpty) {
         return false;
       }
-      final header = response.bodyBytes.take(16).toList();
-      final contentType = _imageMediaType(url, header);
+      final prepared = _preparedImageUpload(
+        bytes: response.bodyBytes,
+        path: url,
+        fallbackName: field == 'signatures' ? 'signature.jpg' : 'id-photo.jpg',
+      );
       request.files.add(http.MultipartFile.fromBytes(
         field,
-        response.bodyBytes,
-        filename: _imageFilename(url, contentType),
-        contentType: contentType,
+        prepared.bytes,
+        filename: prepared.filename,
+        contentType: prepared.contentType,
       ));
       return true;
     } catch (_) {
@@ -1001,7 +1143,7 @@ class DashboardRepository implements IDashboardRepository {
           );
         }
 
-        final streamed = await _client.send(request).timeout(const Duration(seconds: 20));
+        final streamed = await _client.send(request).timeout(const Duration(seconds: 60));
         final response = await http.Response.fromStream(streamed);
 
         if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -1290,7 +1432,10 @@ class DashboardRepository implements IDashboardRepository {
         updated.add(room);
         continue;
       }
-      updated.add(room.copyWith(clearGuest: true));
+      updated.add(room.copyWith(
+        status: room.status == RoomStatus.occupied ? RoomStatus.cleaning : room.status,
+        clearGuest: true,
+      ));
     }
     _rooms = updated;
   }

@@ -192,6 +192,15 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<DashboardBloc, DashboardState>(
+      listenWhen: (previous, current) {
+        final newError = current.errorMessage != null &&
+            current.errorMessage!.isNotEmpty &&
+            current.errorMessage != previous.errorMessage;
+        final newSuccess = current.successMessage != null &&
+            current.successMessage!.isNotEmpty &&
+            current.successMessage != previous.successMessage;
+        return newError || newSuccess;
+      },
       listener: (context, state) {
         final isTest = WidgetsBinding.instance.runtimeType.toString().contains('Test');
         if (isTest) return;
@@ -199,6 +208,13 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
             state.errorMessage != null &&
             state.errorMessage!.isNotEmpty) {
           final cleanMsg = state.errorMessage!.replaceFirst('Exception: ', '');
+          // Ignore noisy room-category refresh failures — UI keeps cached data.
+          final lower = cleanMsg.toLowerCase();
+          if (lower.contains('room type') ||
+              lower.contains('room-type') ||
+              lower.contains('categor')) {
+            return;
+          }
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -224,15 +240,18 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
               ),
             ),
           );
-        } else if (state.status == DashboardStatus.loaded &&
-            state.successMessage != null &&
-            state.successMessage!.isNotEmpty) {
+        } else if (state.successMessage != null && state.successMessage!.isNotEmpty) {
+          final msg = state.successMessage!;
+          final lower = msg.toLowerCase();
+          if (lower.contains('room categor') || lower.contains('retrieved successfully')) {
+            return;
+          }
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               backgroundColor: const Color(0xFF0F766E),
               behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 3),
+              duration: const Duration(seconds: 2),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               content: Row(
                 children: [
@@ -240,7 +259,7 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      state.successMessage!,
+                      msg,
                       style: GoogleFonts.inter(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
@@ -622,6 +641,7 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
 
   // TAB 1: Rooms Inventory & Categories
   Widget _buildRoomsMatrixTab(BuildContext context, DashboardState state) {
+    // Trust rooms API status (OCCUPIED / AVAILABLE / …) for Booked counts.
     final categoryGroups = RoomCategoryGroup.groupFromRoomTypesAndRooms(state.roomTypes, state.allRooms);
 
     final totalReadyCount = state.allRooms.where((r) => r.status == RoomStatus.available).length;

@@ -6,16 +6,20 @@ import '../../../rooms/data/models/room_model.dart';
 class RoomPatch {
   final String? id;
   final String? roomNumber;
+  final String? floor;
   final RoomStatus status;
   final String rawStatus;
   final bool removed;
+  final Map<String, dynamic>? raw;
 
   const RoomPatch({
     required this.id,
     required this.roomNumber,
+    this.floor,
     required this.status,
     required this.rawStatus,
     this.removed = false,
+    this.raw,
   });
 
   String get cacheKey {
@@ -40,16 +44,20 @@ class RoomPatch {
 
   List<RoomModel> apply(List<RoomModel> rooms) {
     var changed = false;
+    var matched = false;
     final next = <RoomModel>[];
     for (final room in rooms) {
       if (!matches(room)) {
         next.add(room);
         continue;
       }
+      matched = true;
       changed = true;
       if (removed) continue;
+      final floorLabel = _floorLabel(floor);
       next.add(room.copyWith(
         status: status,
+        floor: floorLabel,
         statusToday: rawStatus,
         actualDbStatus: rawStatus,
         dateStatus: rawStatus,
@@ -57,7 +65,45 @@ class RoomPatch {
         clearGuest: status == RoomStatus.available,
       ));
     }
+    if (!matched && !removed) {
+      final created = toRoomModel();
+      if (created != null) {
+        next.insert(0, created);
+        changed = true;
+      }
+    }
     return changed ? next : rooms;
+  }
+
+  RoomModel? toRoomModel() {
+    if (removed) return null;
+    final number = (roomNumber ?? '').trim();
+    final roomId = (id ?? '').trim();
+    if (number.isEmpty && roomId.isEmpty) return null;
+    if (raw != null) {
+      try {
+        return RoomModel.fromJson(raw!).copyWith(
+          status: status,
+          statusToday: rawStatus,
+          actualDbStatus: rawStatus,
+          dateStatus: rawStatus,
+          isAvailable: status == RoomStatus.available,
+        );
+      } catch (_) {}
+    }
+    final floorLabel = _floorLabel(floor) ?? 'Floor 1';
+    return RoomModel(
+      id: roomId.isEmpty ? number : roomId,
+      roomNumber: number.isEmpty ? roomId : number,
+      floor: floorLabel,
+      roomType: 'Room',
+      pricePerNight: 0,
+      status: status,
+      statusToday: rawStatus,
+      actualDbStatus: rawStatus,
+      dateStatus: rawStatus,
+      isAvailable: status == RoomStatus.available,
+    );
   }
 
   static RoomPatch? tryParse(Map<String, dynamic> json) {
@@ -72,6 +118,7 @@ class RoomPatch {
     if ((id == null || id.isEmpty) && (roomNumber == null || roomNumber.isEmpty)) {
       return null;
     }
+    final floor = _text(json, const ['floor']);
     final deleted = json['deleted_at'] ?? json['deletedAt'];
     final removed = json['is_active'] == false ||
         json['isActive'] == false ||
@@ -80,9 +127,11 @@ class RoomPatch {
       return RoomPatch(
         id: id,
         roomNumber: roomNumber,
+        floor: floor,
         status: RoomStatus.available,
         rawStatus: 'DELETED',
         removed: true,
+        raw: json,
       );
     }
     final rawStatus = _text(json, const [
@@ -97,8 +146,10 @@ class RoomPatch {
     return RoomPatch(
       id: id,
       roomNumber: roomNumber,
+      floor: floor,
       status: status,
       rawStatus: rawStatus.toUpperCase(),
+      raw: json,
     );
   }
 }
@@ -138,12 +189,48 @@ class RoomBreakdown {
 
   static RoomBreakdown? tryParse(Map<String, dynamic> json) {
     final breakdown = RoomBreakdown(
-      available: _count(json, const ['AVAILABLE', 'available', 'vacant', 'VACANT']),
-      occupied: _count(json, const ['OCCUPIED', 'occupied', 'BOOKED', 'booked']),
-      reserved: _count(json, const ['RESERVED', 'reserved']),
-      cleaning: _count(json, const ['CLEANING', 'cleaning', 'HOUSEKEEPING', 'housekeeping']),
-      maintenance: _count(json, const ['MAINTENANCE', 'maintenance']),
-      blocked: _count(json, const ['BLOCKED', 'blocked']),
+      available: _count(json, const [
+        'AVAILABLE',
+        'available',
+        'available_count',
+        'availableCount',
+        'vacant',
+        'VACANT',
+      ]),
+      occupied: _count(json, const [
+        'OCCUPIED',
+        'occupied',
+        'occupied_count',
+        'occupiedCount',
+        'BOOKED',
+        'booked',
+      ]),
+      reserved: _count(json, const [
+        'RESERVED',
+        'reserved',
+        'reserved_count',
+        'reservedCount',
+      ]),
+      cleaning: _count(json, const [
+        'CLEANING',
+        'cleaning',
+        'cleaning_count',
+        'cleaningCount',
+        'HOUSEKEEPING',
+        'housekeeping',
+      ]),
+      maintenance: _count(json, const [
+        'MAINTENANCE',
+        'maintenance',
+        'maintenance_count',
+        'maintenanceCount',
+      ]),
+      blocked: _count(json, const [
+        'BLOCKED',
+        'blocked',
+        'blocked_count',
+        'blockedCount',
+      ]),
       guests: _count(json, const [
         'currentGuests',
         'current_in_house_guests',
@@ -231,6 +318,8 @@ List<Map<String, dynamic>> _maps(dynamic data) {
     'room',
     'payload',
     'rooms',
+    'room_status_breakdown',
+    'roomStatusBreakdown',
     'room_status_summary',
     'roomStatusSummary',
     'breakdown',
@@ -275,4 +364,11 @@ String _roomKey(String? value) {
   text = text.replaceAll('#', '');
   text = text.replaceAll('room', '');
   return text.trim();
+}
+
+String? _floorLabel(String? value) {
+  final text = (value ?? '').trim();
+  if (text.isEmpty) return null;
+  if (text.toLowerCase().startsWith('floor')) return text;
+  return 'Floor $text';
 }

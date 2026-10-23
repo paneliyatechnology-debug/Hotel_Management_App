@@ -331,7 +331,7 @@ class RoomModel {
     final floorStr =
         rawFloor.toLowerCase().contains('floor') ? rawFloor : 'Floor $rawFloor';
 
-    final guest = json['guestName']?.toString();
+    final guest = _readGuestName(json);
 
     // Stay dates if provided
     String? inDate;
@@ -426,6 +426,37 @@ class RoomModel {
       'notes': notes,
     };
   }
+}
+
+String? _readGuestName(Map<String, dynamic> json) {
+  for (final key in const [
+    'guestName',
+    'guest_name',
+    'primary_guest_name',
+    'primaryGuestName',
+    'current_guest_name',
+    'currentGuestName',
+  ]) {
+    final value = json[key]?.toString().trim();
+    if (value != null && value.isNotEmpty && value.toLowerCase() != 'null') {
+      return value;
+    }
+  }
+  final booking = json['booking'] ?? json['current_booking'] ?? json['active_booking'];
+  if (booking is Map) {
+    for (final key in const [
+      'primary_guest_name',
+      'primaryGuestName',
+      'guest_name',
+      'guestName',
+    ]) {
+      final value = booking[key]?.toString().trim();
+      if (value != null && value.isNotEmpty && value.toLowerCase() != 'null') {
+        return value;
+      }
+    }
+  }
+  return null;
 }
 
 int? _readInt(Object? value) {

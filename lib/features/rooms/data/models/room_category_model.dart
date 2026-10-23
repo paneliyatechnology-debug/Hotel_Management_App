@@ -41,14 +41,13 @@ class RoomCategoryGroup {
     this.statusTotalCount,
   });
 
-  int get availableCount =>
-      statusAvailableCount ?? rooms.where((r) => r.status == RoomStatus.available).length;
-  int get bookedCount =>
-      statusOccupiedCount ?? rooms.where((r) => r.status == RoomStatus.occupied).length;
+  /// Prefer live room rows over room-type API counters. Those counters can stay
+  /// at OCCUPIED after checkout while In-House bookings are already correct.
+  int get availableCount => rooms.where((r) => r.status == RoomStatus.available).length;
+  int get bookedCount => rooms.where((r) => r.status == RoomStatus.occupied).length;
   int get cleaningCount =>
-      statusCleaningCount ??
       rooms.where((r) => r.status == RoomStatus.cleaning || r.status == RoomStatus.maintenance).length;
-  int get totalCount => statusTotalCount ?? rooms.length;
+  int get totalCount => rooms.isNotEmpty ? rooms.length : (statusTotalCount ?? 0);
 
   /// Compatibility alias for categoryId
   String get roomTypeId => categoryId;
