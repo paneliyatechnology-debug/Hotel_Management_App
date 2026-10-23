@@ -1564,8 +1564,26 @@ class DashboardRepository implements IDashboardRepository {
     return '${date.year}-$month-$day';
   }
 
-  /// Live booking totals. `due` is what checkout must send as `paid_amount`.
-  Future<({double total, double paid, double due})?> fetchBookingSettlement(String bookingId) async {
+  /// Live booking bill from GET /api/v1/bookings/{id}. Used to fill checkout fields.
+  Future<({
+    double roomCharges,
+    double discount,
+    double extraCharges,
+    double lateCharge,
+    double lateHours,
+    double taxable,
+    double cgstRate,
+    double sgstRate,
+    double cgst,
+    double sgst,
+    double total,
+    double paid,
+    double due,
+    String guestName,
+    String phone,
+    String bookingNumber,
+    String? notes,
+  })?> fetchBookingSettlement(String bookingId) async {
     if (_shouldSkipLiveNetwork) return null;
     final id = bookingId.trim();
     if (id.isEmpty) return null;
@@ -1584,12 +1602,47 @@ class DashboardRepository implements IDashboardRepository {
         return double.tryParse(value?.toString() ?? '') ?? 0;
       }
 
+      final roomCharges = read(data['base_amount'] ?? data['baseAmount']);
+      final discount = read(data['discount_amount'] ?? data['discountAmount']);
+      final extraCharges = read(data['extra_charges_total'] ?? data['extraChargesTotal']);
+      final lateCharge = read(data['late_checkout_charge'] ?? data['lateCheckoutCharge']);
+      final lateHours = read(data['late_checkout_hours'] ?? data['lateCheckoutHours']);
+      final taxable = data.containsKey('taxable_amount') || data.containsKey('taxableAmount')
+          ? read(data['taxable_amount'] ?? data['taxableAmount'])
+          : (roomCharges - discount + extraCharges + lateCharge).clamp(0, double.infinity).toDouble();
+      final cgstRate = read(data['cgst_rate'] ?? data['cgstRate']).clamp(0, 100).toDouble();
+      final sgstRate = read(data['sgst_rate'] ?? data['sgstRate']).clamp(0, 100).toDouble();
+      final cgst = data.containsKey('cgst_amount') || data.containsKey('cgstAmount')
+          ? read(data['cgst_amount'] ?? data['cgstAmount'])
+          : taxable * (cgstRate > 0 ? cgstRate : 9) / 100;
+      final sgst = data.containsKey('sgst_amount') || data.containsKey('sgstAmount')
+          ? read(data['sgst_amount'] ?? data['sgstAmount'])
+          : taxable * (sgstRate > 0 ? sgstRate : 9) / 100;
       final total = read(data['total_amount'] ?? data['totalAmount']);
       final paid = read(data['paid_amount'] ?? data['paidAmount']);
       final due = data.containsKey('due_amount') || data.containsKey('dueAmount')
           ? read(data['due_amount'] ?? data['dueAmount'])
           : (total - paid).clamp(0, double.infinity).toDouble();
-      return (total: total, paid: paid, due: due);
+      final notes = (data['notes'] ?? '').toString().trim();
+      return (
+        roomCharges: roomCharges,
+        discount: discount,
+        extraCharges: extraCharges,
+        lateCharge: lateCharge,
+        lateHours: lateHours,
+        taxable: taxable,
+        cgstRate: cgstRate > 0 ? cgstRate : 9.0,
+        sgstRate: sgstRate > 0 ? sgstRate : 9.0,
+        cgst: cgst,
+        sgst: sgst,
+        total: total,
+        paid: paid,
+        due: due,
+        guestName: (data['primary_guest_name'] ?? data['primaryGuestName'] ?? '').toString(),
+        phone: (data['mobile_number'] ?? data['mobileNumber'] ?? '').toString(),
+        bookingNumber: (data['booking_number'] ?? data['bookingNumber'] ?? '').toString(),
+        notes: notes.isEmpty ? null : notes,
+      );
     } catch (e) {
       debugPrint('DashboardRepository.fetchBookingSettlement error: $e');
       return null;
@@ -1677,31 +1730,39 @@ class DashboardRepository implements IDashboardRepository {
   }) {
     final paidRaw = customPayload?['paid_amount'] ?? settlementAmount;
     final paidNumber = paidRaw is num ? paidRaw.toDouble() : settlementAmount;
-    final paidAmount = paidNumber == paidNumber.roundToDouble() ? paidNumber.round() : paidNumber;
-    final method = (customPayload?['payment_method'] ??
-            (folio != null && folio.paymentMode.trim().isNotEmpty ? folio.paymentMode : 'UPI'))
+    final paidAmount = _jsonAmount(paidNumber);
+    final methodRaw = (customPayload?['payment_method'] ??
+            (folio != null && folio.paymentMode.trim().isNotEmpty ? folio.paymentMode : 'CASH'))
         .toString()
         .trim()
         .toUpperCase();
-    final notes = (customPayload?['notes'] ??
-            (paidNumber > 0 ? 'Collected remaining balance at the desk' : ''))
-        .toString();
-    final payload = <String, dynamic>{
+    final paymentMethod = methodRaw.contains('CASH')
+        ? 'CASH'
+        : methodRaw.contains('CARD')
+            ? 'CARD'
+            : 'UPI';
+    final notesRaw = (customPayload?['notes'] ?? '').toString().trim();
+    final notes = notesRaw.isNotEmpty
+        ? notesRaw
+        : 'Checked out and settled via $paymentMethod';
+
+    num readAmount(String key, {num fallback = 0}) {
+      final raw = customPayload?[key];
+      if (raw is num) return _jsonAmount(raw.toDouble());
+      final parsed = double.tryParse(raw?.toString() ?? '');
+      if (parsed != null) return _jsonAmount(parsed);
+      return fallback;
+    }
+
+    return <String, dynamic>{
       'paid_amount': paidAmount,
-      'payment_method': method.contains('CASH')
-          ? 'CASH'
-          : method.contains('CARD')
-              ? 'CARD'
-              : 'UPI',
+      'extra_charges_total': readAmount('extra_charges_total'),
+      'discount_amount': readAmount('discount_amount'),
+      'late_checkout_charge': readAmount('late_checkout_charge'),
+      'late_checkout_hours': readAmount('late_checkout_hours'),
       'notes': notes,
+      'payment_method': paymentMethod,
     };
-    if (customPayload?['late_checkout_charge'] != null) {
-      payload['late_checkout_charge'] = customPayload!['late_checkout_charge'];
-    }
-    if (customPayload?['late_checkout_hours'] != null) {
-      payload['late_checkout_hours'] = customPayload!['late_checkout_hours'];
-    }
-    return payload;
   }
 
   @override
