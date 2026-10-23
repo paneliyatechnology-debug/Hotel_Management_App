@@ -208,6 +208,7 @@ class _AdminSubscriptionPageState extends State<AdminSubscriptionPage> {
 
   @override
   Widget build(BuildContext context) {
+    final visiblePlans = _plans.where((plan) => plan.isCurrentPlan || plan.isTrialUsed != true).toList();
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -235,7 +236,7 @@ class _AdminSubscriptionPageState extends State<AdminSubscriptionPage> {
                   actionLabel: 'Try again',
                   onAction: _loadPlans,
                 )
-              : _plans.isEmpty
+              : visiblePlans.isEmpty
                   ? const _PlansMessage(
                       icon: Icons.card_membership_outlined,
                       message: 'No monthly plans are available right now.',
@@ -246,17 +247,19 @@ class _AdminSubscriptionPageState extends State<AdminSubscriptionPage> {
                       child: ListView.separated(
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-                        itemCount: _plans.length + 1,
+                        itemCount: visiblePlans.length + 1,
                         separatorBuilder: (_, __) => const SizedBox(height: 12),
                         itemBuilder: (context, index) {
                           if (index == 0) return const _PlansHeader();
-                          final plan = _plans[index - 1];
+                          final plan = visiblePlans[index - 1];
                           final isCurrent = plan.isCurrentPlan;
                           final trialBlocked = _trialBlocked(plan);
+                          final freeTrialActive = isCurrent && plan.isFreeTrial && (_trialUsed || plan.isTrialUsed == true);
                           return _PlanCard(
                             plan: plan,
-                            isCurrent: isCurrent,
-                            trialBlocked: trialBlocked,
+                            isCurrent: isCurrent && !freeTrialActive,
+                            freeTrialActive: freeTrialActive,
+                            trialBlocked: trialBlocked && !freeTrialActive,
                             isPurchasing: _purchasingPlanId == plan.id,
                             onPurchase: !isCurrent && !trialBlocked && _purchasingPlanId == null
                                 ? () => _confirmPurchase(plan)
@@ -299,6 +302,7 @@ class _PlansHeader extends StatelessWidget {
 class _PlanCard extends StatelessWidget {
   final SubscriptionPlan plan;
   final bool isCurrent;
+  final bool freeTrialActive;
   final bool trialBlocked;
   final bool isPurchasing;
   final VoidCallback? onPurchase;
@@ -306,6 +310,7 @@ class _PlanCard extends StatelessWidget {
   const _PlanCard({
     required this.plan,
     required this.isCurrent,
+    required this.freeTrialActive,
     required this.trialBlocked,
     required this.isPurchasing,
     required this.onPurchase,
@@ -313,13 +318,17 @@ class _PlanCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final highlighted = isCurrent || plan.isPopular;
+    final highlighted = isCurrent || freeTrialActive || plan.isPopular;
     final priceLabel = plan.price <= 0 ? 'Free' : CurrencyFormatter.format(plan.price);
-    final buttonDisabled = isCurrent || trialBlocked;
+    final buttonDisabled = isCurrent || freeTrialActive || trialBlocked;
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: (isCurrent || freeTrialActive) ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
+          width: (isCurrent || freeTrialActive) ? 1.4 : 1,
+        ),
         boxShadow: const [
           BoxShadow(color: Color(0x080F172A), blurRadius: 12, offset: Offset(0, 4)),
         ],
@@ -337,7 +346,10 @@ class _PlanCard extends StatelessWidget {
                     style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
                   ),
                 ),
-                if (isCurrent) ...[
+                if (freeTrialActive) ...[
+                  const _Badge(label: 'Free trial plan active', filled: true),
+                  const SizedBox(width: 6),
+                ] else if (isCurrent) ...[
                   const _Badge(label: 'ACTIVE', filled: true),
                   const SizedBox(width: 6),
                 ],
@@ -397,12 +409,14 @@ class _PlanCard extends StatelessWidget {
                   elevation: const WidgetStatePropertyAll(0),
                   backgroundColor: WidgetStateProperty.resolveWith((states) {
                     if (states.contains(WidgetState.disabled)) {
+                      if (freeTrialActive || isCurrent) return const Color(0xFFECFDF5);
                       return trialBlocked ? const Color(0xFFE2E8F0) : const Color(0xFFECFDF5);
                     }
                     return const Color(0xFF0F766E);
                   }),
                   foregroundColor: WidgetStateProperty.resolveWith((states) {
                     if (states.contains(WidgetState.disabled)) {
+                      if (freeTrialActive || isCurrent) return const Color(0xFF047857);
                       return trialBlocked ? const Color(0xFF94A3B8) : const Color(0xFF047857);
                     }
                     return Colors.white;
@@ -417,9 +431,11 @@ class _PlanCard extends StatelessWidget {
                         child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : Text(
-                        isCurrent
-                            ? 'Active plan'
-                            : 'Purchase plan',
+                        freeTrialActive
+                            ? 'Free trial plan active'
+                            : isCurrent
+                                ? 'Active plan'
+                                : 'Purchase plan',
                         style: GoogleFonts.inter(fontWeight: FontWeight.w800),
                       ),
               ),

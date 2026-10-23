@@ -79,18 +79,18 @@ class RoomLiveSocket {
     final socket = io.io(
       ApiConstants.socketOrigin,
       io.OptionBuilder()
+          .disableAutoConnect()
           .enableForceNew()
-          .setTransports(['websocket', 'polling'])
+          .setTransports(['polling'])
+          .setUpgrade(false)
           .setPath('/socket.io/')
           .enableReconnection()
           .setReconnectionDelay(2000)
           .setReconnectionAttempts(100)
+          .setTimeout(20000)
           .setAuth({
             'token': token,
             'accessToken': token,
-          })
-          .setQuery({
-            'token': token,
           })
           .setExtraHeaders({
             'Accept': 'application/json',
@@ -109,11 +109,7 @@ class RoomLiveSocket {
       socket.emit('dashboard:subscribe', {'date_range': _dateRange});
     });
     socket.on('connect_error', (_) => _refreshAfterError());
-    socket.on('disconnect', (_) {
-      if (_closing) return;
-      _refreshAfterError();
-    });
-    if (!socket.connected) socket.connect();
+    socket.connect();
   }
 
   Future<void> disconnect() async {

@@ -793,17 +793,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Subscription Plan'), findsOneWidget);
-      expect(find.text('Free Trial'), findsOneWidget);
-      expect(find.text('FREE TRIAL'), findsOneWidget);
-      expect(find.text('Free'), findsOneWidget);
+      expect(find.text('Free Trial'), findsNothing);
+      expect(find.text('FREE TRIAL'), findsNothing);
       expect(find.text('Professional Resort'), findsOneWidget);
       expect(find.text('MOST POPULAR'), findsOneWidget);
       expect(find.text('Up to 50 Rooms Inventory'), findsOneWidget);
       expect(find.text('Active plan'), findsOneWidget);
       expect(find.text('ACTIVE'), findsOneWidget);
-      expect(find.text('Purchase plan'), findsOneWidget);
-      final trialButton = tester.widget<ElevatedButton>(find.widgetWithText(ElevatedButton, 'Purchase plan'));
-      expect(trialButton.onPressed, isNull);
+      expect(find.text('Purchase plan'), findsNothing);
     });
 
     testWidgets('AdminSubscriptionPage purchases the selected plan', (WidgetTester tester) async {

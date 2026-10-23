@@ -1,10 +1,13 @@
 class ApiConstants {
+  /// Railway host. API routes and the live socket both use this origin.
+  static const String origin = 'https://api.myownpms.com';
+
   /// Base API URL for backend services
-  static const String baseUrl = 'https://hotelmanagementbackendnew-production.up.railway.app/api/v1';
+  static const String baseUrl = '$origin/api/v1';
 
   /// Socket.IO origin. Postman connects to this host and listens for
   /// `room:status` and `room:status_breakdown`.
-  static const String socketOrigin = 'https://hotelmanagementbackendnew-production.up.railway.app';
+  static const String socketOrigin = origin;
 
   // ---------------------------------------------------------------------------
   // Authentication Endpoints

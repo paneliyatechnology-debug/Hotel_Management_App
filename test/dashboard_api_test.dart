@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:my_own_pms_system/core/constants/api_constants.dart';
 import 'package:my_own_pms_system/core/widgets/status_badge.dart';
 import 'package:my_own_pms_system/features/dashboard/data/models/booking_list_query.dart';
 import 'package:my_own_pms_system/features/dashboard/data/models/guest_folio_model.dart';
@@ -1285,7 +1286,7 @@ void main() {
 
       final pdf = await repo.fetchBookingPdf('4');
       expect(calls, [
-        'GET https://hotelmanagementbackendnew-production.up.railway.app/api/v1/bookings/4/pdf',
+        'GET ${ApiConstants.bookingsUrl}/4/pdf',
         'GET https://example.com/uploads/pdfs/booking_BK.pdf',
       ]);
       expect(pdf.fileName, 'booking_BK.pdf');
@@ -1625,8 +1626,8 @@ void main() {
                           "hotel_id": 1,
                           "name": "Family Room",
                           "description": "Family Room",
-                          "images": [],
-                          "deleted_at": null,
+                      "images": [],
+                      "deleted_at": null,
                           "room_status_counts": {
                               "available_count": 4,
                               "reserved_count": 0,
@@ -1727,7 +1728,7 @@ void main() {
                           "hotel_id": 1,
                           "name": "Family Room",
                           "description": "Family Room",
-                          "images": [],
+                      "images": [],
                           "room_status_counts": {
                               "available_count": 4,
                               "occupied_count": 1,
@@ -2458,7 +2459,7 @@ void main() {
                 'success': true,
                 'message': 'GST report exported successfully.',
                 'data': {
-                  'url': 'https://hotelmanagementbackendnew-production.up.railway.app/uploads/pdfs/gst_report.pdf',
+                  'url': '${ApiConstants.origin}/uploads/pdfs/gst_report.pdf',
                   'file_name': 'gst_report.pdf',
                   'format': 'pdf',
                   'row_count': 2,
