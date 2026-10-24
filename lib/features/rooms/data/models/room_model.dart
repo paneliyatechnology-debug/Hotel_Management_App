@@ -42,6 +42,11 @@ class RoomModel {
   final String? requestedCheckInDate;
   final String? requestedCheckOutDate;
   final String keyCode;
+  /// Physical rooms API: `current_booking_id` when status is OCCUPIED.
+  final String? currentBookingId;
+  final String hotelName;
+  final DateTime? cleaningStartedAt;
+  final bool isActive;
 
   const RoomModel({
     required this.id,
@@ -83,6 +88,10 @@ class RoomModel {
     this.requestedCheckInDate,
     this.requestedCheckOutDate,
     this.keyCode = '',
+    this.currentBookingId,
+    this.hotelName = '',
+    this.cleaningStartedAt,
+    this.isActive = true,
   });
 
   /// Formats clean room number without `#` or prefix
@@ -163,6 +172,12 @@ class RoomModel {
     String? requestedCheckInDate,
     String? requestedCheckOutDate,
     String? keyCode,
+    String? currentBookingId,
+    bool clearCurrentBookingId = false,
+    String? hotelName,
+    DateTime? cleaningStartedAt,
+    bool clearCleaningStartedAt = false,
+    bool? isActive,
   }) {
     return RoomModel(
       id: id ?? this.id,
@@ -204,6 +219,14 @@ class RoomModel {
       requestedCheckInDate: requestedCheckInDate ?? this.requestedCheckInDate,
       requestedCheckOutDate: requestedCheckOutDate ?? this.requestedCheckOutDate,
       keyCode: keyCode ?? this.keyCode,
+      currentBookingId: clearCurrentBookingId
+          ? null
+          : (currentBookingId ?? this.currentBookingId),
+      hotelName: hotelName ?? this.hotelName,
+      cleaningStartedAt: clearCleaningStartedAt
+          ? null
+          : (cleaningStartedAt ?? this.cleaningStartedAt),
+      isActive: isActive ?? this.isActive,
     );
   }
 
@@ -228,18 +251,27 @@ class RoomModel {
     if (roomTypeData is Map<String, dynamic>) {
       typeId = roomTypeData['_id']?.toString() ?? roomTypeData['id']?.toString();
       typeName = roomTypeData['name']?.toString() ?? 'Standard Room';
-      basePrice = (roomTypeData['basePrice'] as num?)?.toDouble();
-      typeBedCount = (roomTypeData['bedCount'] as num?)?.toInt() ?? 1;
-      typeBedType = roomTypeData['bedType']?.toString() ?? '1 King Size Bed';
+      basePrice = (roomTypeData['basePrice'] as num?)?.toDouble() ??
+          (roomTypeData['base_price'] as num?)?.toDouble();
+      typeBedCount = (roomTypeData['bedCount'] as num?)?.toInt() ??
+          (roomTypeData['bed_count'] as num?)?.toInt() ??
+          1;
+      typeBedType = roomTypeData['bedType']?.toString() ??
+          roomTypeData['bed_type']?.toString() ??
+          '1 King Size Bed';
       typeDescription = roomTypeData['description']?.toString() ?? '';
-      typeGstEnabled = roomTypeData['gstEnabled'] as bool? ?? true;
-      typeGstRate = (roomTypeData['gstRate'] as num?)?.toDouble() ?? 18.0;
+      typeGstEnabled = roomTypeData['gstEnabled'] as bool? ??
+          roomTypeData['gst_enabled'] as bool? ??
+          true;
+      typeGstRate = (roomTypeData['gstRate'] as num?)?.toDouble() ??
+          (roomTypeData['gst_rate'] as num?)?.toDouble() ??
+          18.0;
       typeCgstRate = (roomTypeData['cgstRate'] as num?)?.toDouble() ?? 9.0;
       typeSgstRate = (roomTypeData['sgstRate'] as num?)?.toDouble() ?? 9.0;
       typeTaxInclusive = roomTypeData['taxInclusive'] as bool? ?? false;
 
       if (roomTypeData['capacity'] is Map) {
-        final cap = roomTypeData['capacity'] as Map<String, dynamic>;
+        final cap = Map<String, dynamic>.from(roomTypeData['capacity'] as Map);
         adults = (cap['adults'] as num?)?.toInt() ?? 2;
         children = (cap['children'] as num?)?.toInt() ?? 0;
       }
@@ -251,14 +283,16 @@ class RoomModel {
       }
     } else if (roomTypeData is String && roomTypeData.isNotEmpty) {
       typeName = roomTypeData;
-    } else {
-      final flatTypeName = json['room_type_name']?.toString() ?? json['roomTypeName']?.toString();
-      if (flatTypeName != null && flatTypeName.trim().isNotEmpty) {
-        typeName = flatTypeName.trim();
-      }
     }
 
-    // Room-level amenities override or supplement (handles List or comma-separated String)
+    // Physical rooms API: flat room_type_name / room_type_id
+    final flatTypeName = json['room_type_name']?.toString() ?? json['roomTypeName']?.toString();
+    if (flatTypeName != null && flatTypeName.trim().isNotEmpty) {
+      typeName = flatTypeName.trim();
+    }
+    typeId ??= json['room_type_id']?.toString() ?? json['roomTypeId']?.toString();
+
+    // Room-level amenities (List or comma-separated String)
     if (json['amenities'] is String && (json['amenities'] as String).trim().isNotEmpty) {
       roomAmenities = (json['amenities'] as String)
           .split(',')
@@ -270,10 +304,17 @@ class RoomModel {
     }
 
     if (typeImages.isEmpty && json['images'] is List) {
-      typeImages.addAll((json['images'] as List).map((e) => e.toString()));
+      for (final item in json['images'] as List) {
+        if (item is String && item.trim().isNotEmpty) {
+          typeImages.add(item.trim());
+        } else if (item is Map) {
+          final url = (item['url'] ?? item['image_url'] ?? item['path'] ?? '').toString().trim();
+          if (url.isNotEmpty) typeImages.add(url);
+        }
+      }
     }
 
-    // Price resolution: customPricePerNight / custom_price_per_night takes precedence
+    // Price: custom_price_per_night takes precedence
     final rawCustomPrice = json['custom_price_per_night'] ?? json['customPricePerNight'];
     final customPrice = (rawCustomPrice is num)
         ? rawCustomPrice.toDouble()
@@ -291,7 +332,7 @@ class RoomModel {
       resolvedPrice = 4000.0;
     }
 
-    // Bed configuration. Prefer the beds array, then bed_count / bed_type.
+    // beds: [{ id, bed_type, bed_count }, ...]
     var bedCount = typeBedCount;
     var bedType = typeBedType;
     final bedsLabel = _bedsLabel(json['beds']);
@@ -306,43 +347,64 @@ class RoomModel {
       bedType = json['bed_type']?.toString() ?? json['bedType']?.toString() ?? typeBedType;
     }
 
-    // Seating capacity (supports seating_capacity / seatingCapacity)
     final rawSeating = json['seating_capacity'] ?? json['seatingCapacity'];
     final seating = (rawSeating is num)
         ? rawSeating.toInt()
         : (int.tryParse(rawSeating?.toString() ?? '') ?? (adults + children));
 
-    // Status parsing
-    final rawStatus = json['status']?.toString().toUpperCase() ?? 'AVAILABLE';
-    RoomStatus parsedStatus = RoomStatus.available;
-    if (rawStatus == 'OCCUPIED' || rawStatus == 'BOOKED') {
-      parsedStatus = RoomStatus.occupied;
-    } else if (rawStatus == 'CLEANING') {
-      parsedStatus = RoomStatus.cleaning;
-    } else if (rawStatus == 'MAINTENANCE' || rawStatus == 'BLOCKED') {
-      parsedStatus = RoomStatus.maintenance;
-    }
+    // status: AVAILABLE | OCCUPIED | CLEANING | MAINTENANCE
+    final rawStatus = (json['status'] ?? 'AVAILABLE').toString().trim().toUpperCase();
+    final parsedStatus = switch (rawStatus) {
+      'OCCUPIED' || 'BOOKED' => RoomStatus.occupied,
+      'CLEANING' => RoomStatus.cleaning,
+      'MAINTENANCE' || 'BLOCKED' => RoomStatus.maintenance,
+      _ => RoomStatus.available,
+    };
+    final roomIsAvailable = parsedStatus == RoomStatus.available;
 
-    final rawRoomNum = (json['room_number'] ?? json['roomNumber'] ?? '').toString();
+    final rawRoomNum = (json['room_number'] ?? json['roomNumber'] ?? '').toString().trim();
     final formattedRoomNum = rawRoomNum.isEmpty
         ? ''
         : (rawRoomNum.startsWith('#') ? rawRoomNum : '#$rawRoomNum');
-    final rawFloor = (json['floor'] ?? '1').toString();
+    final rawFloor = (json['floor'] ?? '1').toString().trim();
     final floorStr =
         rawFloor.toLowerCase().contains('floor') ? rawFloor : 'Floor $rawFloor';
 
     final guest = _readGuestName(json);
+    final bookingIdRaw = json['current_booking_id'] ?? json['currentBookingId'];
+    final bookingId = bookingIdRaw == null || '$bookingIdRaw'.trim().isEmpty || '$bookingIdRaw' == 'null'
+        ? null
+        : '$bookingIdRaw'.trim();
 
-    // Stay dates if provided
     String? inDate;
     String? outDate;
     if (json['requestedStayPeriod'] is Map) {
-      final period = json['requestedStayPeriod'] as Map<String, dynamic>;
+      final period = Map<String, dynamic>.from(json['requestedStayPeriod'] as Map);
       inDate = period['checkInDate']?.toString();
       outDate = period['checkOutDate']?.toString();
     }
 
     final calculatedCapacity = (adults + children) > 0 ? (adults + children) : 2;
+    final hotelIdRaw = json['hotel_id'] ?? (json['hotel'] is Map ? (json['hotel'] as Map)['id'] : json['hotel']);
+    final hotelName = (json['hotel_name'] ??
+            json['hotelName'] ??
+            (json['hotel'] is Map ? (json['hotel'] as Map)['name'] : null) ??
+            '')
+        .toString()
+        .trim();
+    final isActive = json['is_active'] == true ||
+        json['isActive'] == true ||
+        (json['is_active'] == null && json['isActive'] == null && json['deleted_at'] == null);
+    final cleaningStarted = _readDateTime(
+      json['cleaning_started_at'] ?? json['cleaningStartedAt'],
+    );
+
+    // is_active = room record enabled; availability comes from status
+    final explicitAvailable = json['isAvailable'] ?? json['is_available'];
+    final resolvedAvailable = explicitAvailable is bool ? explicitAvailable : roomIsAvailable;
+    final explicitAvailableForDates = json['isAvailableForDates'] ?? json['is_available_for_dates'];
+    final resolvedAvailableForDates =
+        explicitAvailableForDates is bool ? explicitAvailableForDates : roomIsAvailable;
 
     return RoomModel(
       id: json['_id']?.toString() ?? json['id']?.toString() ?? formattedRoomNum,
@@ -353,12 +415,13 @@ class RoomModel {
       status: parsedStatus,
       currentGuestName:
           (guest != null && guest.trim().isNotEmpty) ? guest.trim() : null,
+      currentGuestFolioId: bookingId,
       maxOccupancy: calculatedCapacity,
       amenities: roomAmenities.isNotEmpty
           ? roomAmenities
           : const ['Wi-Fi', 'AC', 'TV', 'En-suite Bath'],
-      roomTypeId: typeId ?? json['room_type_id']?.toString() ?? json['roomTypeId']?.toString(),
-      hotelId: json['hotel']?.toString() ?? json['hotel_id']?.toString(),
+      roomTypeId: typeId,
+      hotelId: hotelIdRaw?.toString(),
       customPricePerNight: customPrice,
       basePrice: basePrice,
       bedCount: bedCount,
@@ -366,17 +429,20 @@ class RoomModel {
       adultsCapacity: adults,
       childrenCapacity: children,
       seatingCapacity: seating,
-      cleaningDurationMinutes: _readInt(json['cleaning_duration_minutes'] ?? json['cleaningDurationMinutes']) ?? 15,
-      gstEnabled: json['gstEnabled'] as bool? ?? typeGstEnabled,
-      gstRate: (json['gstRate'] as num?)?.toDouble() ?? typeGstRate,
+      cleaningDurationMinutes:
+          _readInt(json['cleaning_duration_minutes'] ?? json['cleaningDurationMinutes']) ?? 15,
+      gstEnabled: json['gstEnabled'] as bool? ?? json['gst_enabled'] as bool? ?? typeGstEnabled,
+      gstRate: (json['gstRate'] as num?)?.toDouble() ??
+          (json['gst_rate'] as num?)?.toDouble() ??
+          typeGstRate,
       cgstRate: (json['cgstRate'] as num?)?.toDouble() ?? typeCgstRate,
       sgstRate: (json['sgstRate'] as num?)?.toDouble() ?? typeSgstRate,
       taxInclusive: json['taxInclusive'] as bool? ?? typeTaxInclusive,
-      isAvailable: json['isAvailable'] == true || json['is_active'] == true || json['isActive'] == true,
-      isAvailableForDates: json['isAvailableForDates'] == true,
-      dateStatus: json['dateStatus']?.toString() ?? 'AVAILABLE',
-      statusToday: json['statusToday']?.toString() ?? 'AVAILABLE',
-      actualDbStatus: json['actualDbStatus']?.toString() ?? 'AVAILABLE',
+      isAvailable: resolvedAvailable,
+      isAvailableForDates: resolvedAvailableForDates,
+      dateStatus: json['dateStatus']?.toString() ?? rawStatus,
+      statusToday: json['statusToday']?.toString() ?? rawStatus,
+      actualDbStatus: json['actualDbStatus']?.toString() ?? rawStatus,
       overlapReason: json['overlapReason']?.toString() ?? '',
       notes: json['notes']?.toString() ?? '',
       images: typeImages,
@@ -386,44 +452,43 @@ class RoomModel {
       requestedCheckInDate: inDate,
       requestedCheckOutDate: outDate,
       keyCode: (json['key_code'] ?? json['keyCode'] ?? '').toString().trim(),
+      currentBookingId: bookingId,
+      hotelName: hotelName,
+      cleaningStartedAt: cleaningStarted,
+      isActive: isActive,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      '_id': id,
-      'roomNumber': cleanRoomNumber,
+      'id': id,
+      'room_number': cleanRoomNumber,
       'floor': floor,
-      'roomType': {
-        '_id': roomTypeId,
-        'name': roomType,
-        'basePrice': basePrice,
-        'bedCount': bedCount,
-        'bedType': bedType,
-        'capacity': {
-          'adults': adultsCapacity,
-          'children': childrenCapacity,
-        },
-        'amenities': amenities,
-        'images': images,
-        'description': roomTypeDescription,
-      },
-      'pricePerNight': pricePerNight,
-      'customPricePerNight': customPricePerNight,
+      'room_type_id': roomTypeId,
+      'room_type_name': roomType,
+      'hotel_id': hotelId,
+      'hotel_name': hotelName,
+      'custom_price_per_night': customPricePerNight ?? pricePerNight,
       'status': status.name.toUpperCase(),
+      'current_booking_id': currentBookingId,
       'guestName': currentGuestName,
-      'seatingCapacity': seatingCapacity,
-      'bedCount': bedCount,
-      'bedType': bedType,
-      'cleaningDurationMinutes': cleaningDurationMinutes,
+      'seating_capacity': seatingCapacity,
+      'bed_count': bedCount,
+      'bed_type': bedType,
+      'cleaning_duration_minutes': cleaningDurationMinutes,
+      'cleaning_started_at': cleaningStartedAt?.toIso8601String(),
       'gstEnabled': gstEnabled,
       'gstRate': gstRate,
       'cgstRate': cgstRate,
       'sgstRate': sgstRate,
       'taxInclusive': taxInclusive,
+      'is_active': isActive,
       'isAvailable': isAvailable,
       'dateStatus': dateStatus,
       'notes': notes,
+      'key_code': keyCode,
+      'amenities': amenities,
+      'images': images,
     };
   }
 }
@@ -464,14 +529,25 @@ int? _readInt(Object? value) {
   return int.tryParse(value?.toString() ?? '');
 }
 
+DateTime? _readDateTime(Object? value) {
+  if (value == null) return null;
+  if (value is DateTime) return value;
+  final raw = value.toString().trim();
+  if (raw.isEmpty || raw.toLowerCase() == 'null') return null;
+  return DateTime.tryParse(raw);
+}
+
 ({int count, String label})? _bedsLabel(dynamic raw) {
   if (raw is! List || raw.isEmpty) return null;
   final parts = <String>[];
   var total = 0;
   for (final item in raw) {
     if (item is! Map) continue;
-    final count = (item['bed_count'] as num?)?.toInt() ?? int.tryParse('${item['bed_count']}') ?? 1;
-    final line = _bedLine(count, '${item['bed_type'] ?? ''}');
+    final count = (item['bed_count'] as num?)?.toInt() ??
+        (item['bedCount'] as num?)?.toInt() ??
+        int.tryParse('${item['bed_count'] ?? item['bedCount'] ?? ''}') ??
+        1;
+    final line = _bedLine(count, '${item['bed_type'] ?? item['bedType'] ?? ''}');
     if (line.isEmpty) continue;
     total += count < 1 ? 1 : count;
     parts.add(line);

@@ -18,8 +18,8 @@ class ApiConstants {
   static const String meUrl = '$authBaseUrl/me';
 
   // ---------------------------------------------------------------------------
-  // Hotel Admin Endpoints
-  // ---------------------------------------------------------------------------
+  //   // Hotel Admin Endpoints
+  //   // ---------------------------------------------------------------------------
   static const String adminBaseUrl = '$baseUrl/admin';
   static const String adminDashboardUrl = '$adminBaseUrl/dashboard';
   static const String dashboardUrl = '$baseUrl/dashboard';
@@ -48,6 +48,7 @@ class ApiConstants {
   static const String roomsUrl = '$baseUrl/rooms';
   static const String usersUrl = '$baseUrl/users';
   static const String bookingsUrl = '$baseUrl/bookings';
+  static const String paymentMethodsUrl = '$baseUrl/payment-methods';
   static const String gstReportExportUrl = '$baseUrl/reports/gst/export';
   static String roomsPageUrl({int page = 1, int limit = 10}) =>
       '$roomsUrl?page=$page&limit=$limit';

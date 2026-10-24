@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../bloc/guests_bloc.dart';
 import '../bloc/guests_event.dart';
 import '../bloc/guests_state.dart';
-import '../widgets/advanced_filter_bottom_sheet.dart';
-import '../widgets/date_filter_bottom_sheet.dart';
 import '../widgets/guest_card.dart';
 import '../widgets/guest_skeleton_loader.dart';
 import 'guest_details_screen.dart';
@@ -57,24 +56,21 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
   Widget _buildMobileLayout(BuildContext context, GuestsState state) {
     return Column(
       children: [
-        // STICKY HEADER & CONTROLS
         Container(
-          color: Colors.white,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildSearchBar(state),
-              const SizedBox(height: 12),
-              _buildStatusFilterRow(state),
-              const SizedBox(height: 10),
-              _buildSecondaryFilterBar(context, state),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: Color(0xFFE8EEF2))),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x060F172A),
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
             ],
           ),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: _buildSearchBar(state),
         ),
-        const Divider(height: 1, color: AppColors.borderSubtle),
-
-        // GUEST LIST OR SKELETON OR EMPTY STATE
         Expanded(
           child: _buildGuestListContent(context, state, isWideScreen: false),
         ),
@@ -85,24 +81,11 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
   Widget _buildTabletSplitLayout(BuildContext context, GuestsState state) {
     return Column(
       children: [
-        // STICKY HEADER & CONTROLS
+        // STICKY HEADER — search only
         Container(
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(flex: 3, child: _buildSearchBar(state)),
-                  const SizedBox(width: 16),
-                  Expanded(flex: 2, child: _buildSecondaryFilterBar(context, state)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _buildStatusFilterRow(state),
-            ],
-          ),
+          child: _buildSearchBar(state),
         ),
         const Divider(height: 1, color: AppColors.borderSubtle),
 
@@ -155,42 +138,46 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
   }
 
   Widget _buildSearchBar(GuestsState state) {
-    return Container(
-      height: 48,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      height: 44,
       decoration: BoxDecoration(
-        color: AppColors.neutral100,
-        borderRadius: BorderRadius.circular(14),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _searchFocus.hasFocus ? AppColors.primary : AppColors.borderSubtle,
-          width: _searchFocus.hasFocus ? 1.5 : 1,
+          color: _searchFocus.hasFocus ? AppColors.primary : const Color(0xFFE2E8F0),
+          width: _searchFocus.hasFocus ? 1.4 : 1,
         ),
       ),
       child: TextField(
         controller: _searchController,
         focusNode: _searchFocus,
-        style: const TextStyle(
-          fontSize: 14,
-          color: AppColors.neutral900,
-        ),
+        onTap: () => setState(() {}),
         onChanged: (query) {
           context.read<GuestsBloc>().add(SearchGuestsEvent(query));
+          setState(() {});
         },
+        style: GoogleFonts.inter(
+          fontSize: 13.5,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFF0F172A),
+        ),
         decoration: InputDecoration(
           isDense: true,
           hintText: 'Search guest name, mobile, email, room...',
-          hintStyle: const TextStyle(
-            fontSize: 13,
-            color: AppColors.neutral500,
-            fontWeight: FontWeight.w400,
+          hintStyle: GoogleFonts.inter(
+            fontSize: 12.5,
+            color: const Color(0xFF94A3B8),
+            fontWeight: FontWeight.w500,
           ),
           prefixIcon: const Icon(
             Icons.search_rounded,
-            color: AppColors.neutral500,
-            size: 20,
+            color: Color(0xFF64748B),
+            size: 19,
           ),
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
-                  icon: const Icon(Icons.clear_rounded, size: 18, color: AppColors.neutral600),
+                  icon: const Icon(Icons.clear_rounded, size: 17, color: Color(0xFF64748B)),
                   onPressed: () {
                     _searchController.clear();
                     context.read<GuestsBloc>().add(const SearchGuestsEvent(''));
@@ -199,232 +186,17 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
                 )
               : null,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
         ),
       ),
     );
   }
 
-  Widget _buildStatusFilterRow(GuestsState state) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _buildStatusChip(
-            label: 'All (${state.totalCount})',
-            isSelected: state.statusFilter == 'All',
-            onTap: () {
-              context.read<GuestsBloc>().add(const ChangeStatusFilterEvent('All'));
-            },
-          ),
-          const SizedBox(width: 8),
-          _buildStatusChip(
-            label: 'In-House (${state.inHouseCount})',
-            isSelected: state.statusFilter == 'In-House',
-            activeColor: AppColors.statusSuccess,
-            onTap: () {
-              context.read<GuestsBloc>().add(const ChangeStatusFilterEvent('In-House'));
-            },
-          ),
-          const SizedBox(width: 8),
-          _buildStatusChip(
-            label: 'Checked-Out (${state.checkedOutCount})',
-            isSelected: state.statusFilter == 'Checked-Out',
-            activeColor: AppColors.primary,
-            onTap: () {
-              context.read<GuestsBloc>().add(const ChangeStatusFilterEvent('Checked-Out'));
-            },
-          ),
-          if (state.registeredCount > 0) ...[
-            const SizedBox(width: 8),
-            _buildStatusChip(
-              label: 'Registered (${state.registeredCount})',
-              isSelected: state.statusFilter == 'Registered',
-              activeColor: const Color(0xFFD97706),
-              onTap: () {
-                context.read<GuestsBloc>().add(const ChangeStatusFilterEvent('Registered'));
-              },
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusChip({
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-    Color activeColor = AppColors.primary,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? activeColor : Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: isSelected ? activeColor : AppColors.borderSubtle,
-            width: isSelected ? 1.5 : 1,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: activeColor.withValues(alpha: 0.25),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            color: isSelected ? Colors.white : AppColors.neutral700,
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _clearFilters(BuildContext context) {
+  void _clearSearch(BuildContext context) {
     _searchController.clear();
+    context.read<GuestsBloc>().add(const SearchGuestsEvent(''));
     context.read<GuestsBloc>().add(const ClearAllFiltersEvent());
     setState(() {});
-  }
-
-  Widget _buildSecondaryFilterBar(BuildContext context, GuestsState state) {
-    final hasActiveDate = state.dateFilterOption != DateFilterOption.allTime;
-    final sheetFilterCount = state.advancedFilters.activeCount;
-    final hasSheetFilters = sheetFilterCount > 0;
-
-    return Row(
-      children: [
-        // DATE FILTER BUTTON
-        Expanded(
-          child: InkWell(
-            onTap: () {
-              DateFilterBottomSheet.show(
-                context,
-                initialOption: state.dateFilterOption,
-                initialCustomRange: state.customDateRange,
-                onApply: (result) {
-                  context.read<GuestsBloc>().add(ChangeDateFilterEvent(
-                        option: result.option,
-                        customRange: result.customRange,
-                      ));
-                },
-              );
-            },
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              decoration: BoxDecoration(
-                color: hasActiveDate ? AppColors.primarySurface : AppColors.neutral100,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: hasActiveDate ? AppColors.primary : AppColors.borderSubtle,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.calendar_today_rounded,
-                    size: 14,
-                    color: hasActiveDate ? AppColors.primary : AppColors.neutral600,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      state.dateFilterLabel,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: hasActiveDate ? FontWeight.w700 : FontWeight.w500,
-                        color: hasActiveDate ? AppColors.primary : AppColors.neutral800,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: AppColors.neutral500),
-                ],
-              ),
-            ),
-          ),
-        ),
-
-        const SizedBox(width: 8),
-
-        // ADVANCED FILTERS BUTTON
-        InkWell(
-          onTap: () {
-            AdvancedFilterBottomSheet.show(
-              context,
-              initialFilters: state.advancedFilters,
-              onApply: (newFilters) {
-                context.read<GuestsBloc>().add(ApplyAdvancedFiltersEvent(newFilters));
-              },
-            );
-          },
-          borderRadius: BorderRadius.circular(10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: hasSheetFilters ? AppColors.primarySurface : AppColors.neutral100,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: hasSheetFilters ? AppColors.primary : AppColors.borderSubtle,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.tune_rounded,
-                  size: 15,
-                  color: hasSheetFilters ? AppColors.primary : AppColors.neutral700,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  hasSheetFilters ? 'Filters ($sheetFilterCount)' : 'Filters',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: hasSheetFilters ? FontWeight.w700 : FontWeight.w600,
-                    color: hasSheetFilters ? AppColors.primary : AppColors.neutral800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // RESET BUTTON IF ANY FILTERS ARE ACTIVE
-        if (state.hasAnyFiltersActive) ...[
-          const SizedBox(width: 6),
-          TextButton(
-            onPressed: () => _clearFilters(context),
-            style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: const Size(0, 36),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: const Text(
-              'Clear',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: AppColors.primary,
-              ),
-            ),
-          ),
-        ],
-      ],
-    );
   }
 
   Widget _buildGuestListContent(BuildContext context, GuestsState state, {required bool isWideScreen}) {
@@ -463,9 +235,9 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
         },
         child: ListView.separated(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
           itemCount: state.filteredGuests.length + (showLoader ? 1 : 0),
-          separatorBuilder: (_, _) => const SizedBox.shrink(),
+          separatorBuilder: (_, _) => const SizedBox(height: 0),
           itemBuilder: (context, index) {
             if (index >= state.filteredGuests.length) {
               return const Padding(
@@ -508,41 +280,41 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 72,
-              height: 72,
-              decoration: const BoxDecoration(
+              width: 68,
+              height: 68,
+              decoration: BoxDecoration(
                 color: AppColors.primarySurface,
                 shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF99F6E4)),
               ),
               child: const Center(
                 child: Icon(
-                  Icons.person_off_rounded,
-                  size: 36,
+                  Icons.person_search_rounded,
+                  size: 30,
                   color: AppColors.primary,
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            const Text(
+            const SizedBox(height: 14),
+            Text(
               'No guests found',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppColors.neutral900,
-                letterSpacing: -0.3,
+              style: GoogleFonts.inter(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: const Color(0xFF0F172A),
               ),
             ),
-            const SizedBox(height: 6),
-            const Text(
-              'Try a different name, mobile number, email or date range.',
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.neutral600,
-                height: 1.4,
+            const SizedBox(height: 4),
+            Text(
+              'Try a different guest name, mobile number, or email.',
+              style: GoogleFonts.inter(
+                fontSize: 12.5,
+                color: const Color(0xFF64748B),
+                height: 1.35,
               ),
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
@@ -551,14 +323,14 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
               ),
-              onPressed: () => _clearFilters(context),
-              child: const Text(
-                'Clear Filters',
-                style: TextStyle(
+              onPressed: () => _clearSearch(context),
+              child: Text(
+                'Clear Search',
+                style: GoogleFonts.inter(
                   fontSize: 13,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),

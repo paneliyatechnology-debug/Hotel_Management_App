@@ -363,7 +363,7 @@ class _SkeletonCard extends StatelessWidget {
   }
 }
 
-/// Matches the Daily Collections hero, three totals, and ledger rows.
+/// Matches Daily Collections: date chips, hero, counts, payment + billing.
 class DailyCollectionsShimmer extends StatelessWidget {
   const DailyCollectionsShimmer({super.key});
 
@@ -372,66 +372,59 @@ class DailyCollectionsShimmer extends StatelessWidget {
     return ShimmerWrapper(
       child: ListView(
         physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
         children: [
+          const Row(
+            children: [
+              ShimmerBox(width: 64, height: 34, borderRadius: 20),
+              SizedBox(width: 8),
+              ShimmerBox(width: 84, height: 34, borderRadius: 20),
+              SizedBox(width: 8),
+              ShimmerBox(width: 90, height: 34, borderRadius: 20),
+            ],
+          ),
+          const SizedBox(height: 14),
           _SkeletonCard(
-            radius: 16,
+            radius: 18,
             padding: const EdgeInsets.all(18),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    ShimmerBox(width: 20, height: 20, borderRadius: 6, strong: true),
-                    SizedBox(width: 8),
-                    ShimmerBox(width: 160, height: 13, borderRadius: 4),
-                    Spacer(),
-                    ShimmerBox(width: 78, height: 20, borderRadius: 20),
+                    ShimmerBox(width: 34, height: 34, borderRadius: 10, strong: true),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ShimmerBox(width: 120, height: 11, borderRadius: 4),
+                          SizedBox(height: 6),
+                          ShimmerBox(width: 100, height: 11, borderRadius: 4),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-                SizedBox(height: 14),
-                ShimmerBox(width: 140, height: 28, borderRadius: 6, strong: true),
-                SizedBox(height: 8),
-                ShimmerBox(width: 220, height: 12, borderRadius: 4),
                 SizedBox(height: 16),
-                ShimmerBox(height: 42, borderRadius: 10),
+                ShimmerBox(width: 160, height: 30, borderRadius: 6, strong: true),
+                SizedBox(height: 12),
+                ShimmerBox(height: 34, borderRadius: 10),
               ],
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           const Row(
             children: [
-              Expanded(child: ShimmerBox(height: 78, borderRadius: 14)),
-              SizedBox(width: 8),
-              Expanded(child: ShimmerBox(height: 78, borderRadius: 14)),
-              SizedBox(width: 8),
-              Expanded(child: ShimmerBox(height: 78, borderRadius: 14)),
+              Expanded(child: ShimmerBox(height: 72, borderRadius: 14)),
+              SizedBox(width: 10),
+              Expanded(child: ShimmerBox(height: 72, borderRadius: 14)),
             ],
           ),
-          const SizedBox(height: 16),
-          ...List.generate(4, (_) => const Padding(
-                padding: EdgeInsets.only(bottom: 10),
-                child: _SkeletonCard(
-                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  child: Row(
-                    children: [
-                      ShimmerBox(width: 36, height: 36, borderRadius: 10),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            ShimmerBox(width: 120, height: 13, borderRadius: 4, strong: true),
-                            SizedBox(height: 6),
-                            ShimmerBox(width: 80, height: 11, borderRadius: 4),
-                          ],
-                        ),
-                      ),
-                      ShimmerBox(width: 64, height: 14, borderRadius: 4, strong: true),
-                    ],
-                  ),
-                ),
-              )),
+          const SizedBox(height: 14),
+          const ShimmerBox(height: 140, borderRadius: 16),
+          const SizedBox(height: 14),
+          const ShimmerBox(height: 160, borderRadius: 16),
         ],
       ),
     );

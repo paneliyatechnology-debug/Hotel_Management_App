@@ -9,7 +9,6 @@ import '../../../check_in_wizard/presentation/pages/check_in_wizard_page.dart';
 import '../../../folios/presentation/pages/in_house_folios_page.dart';
 import '../../../folios/presentation/widgets/checkout_settlement_dialog.dart';
 import '../../../folios/presentation/pages/in_house_guest_details_page.dart';
-import '../../../../core/widgets/status_badge.dart';
 import '../../../rooms/data/models/room_model.dart';
 import '../../../rooms/data/models/room_category_model.dart';
 import '../../../rooms/presentation/pages/category_rooms_page.dart';
@@ -19,9 +18,11 @@ import '../bloc/dashboard_state.dart';
 import '../widgets/kpi_metrics_grid.dart';
 import '../widgets/modern_mobile_header.dart';
 import 'status_rooms_page.dart';
+import '../widgets/dashboard_period_summary_card.dart';
 import '../widgets/recent_check_in_out_section.dart';
 import 'hotel_admin_dashboard_view.dart';
 import '../widgets/dashboard_shimmer_loader.dart';
+import '../../domain/repositories/dashboard_repository.dart';
 import '../../../guests/presentation/pages/guests_tab_screen.dart';
 import '../../../more/presentation/pages/gst_report_page.dart';
 import '../../../more/presentation/pages/receptionist_more_tab.dart';
@@ -31,7 +32,6 @@ import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../auth/presentation/bloc/auth_event.dart';
 import '../../../auth/presentation/pages/login_screen.dart';
 import 'admin_daily_collections_page.dart';
-import '../../../notifications/presentation/pages/notifications_page.dart';
 import 'admin_staff_management_page.dart';
 import 'admin_rooms_tariffs_page.dart';
 import 'admin_subscription_page.dart';
@@ -47,13 +47,13 @@ class MobileMainScreen extends StatefulWidget {
 class _MobileMainScreenState extends State<MobileMainScreen> {
   int _selectedTabIndex = 0;
   String _roomsSearchQuery = '';
-  String _roomsFilterType = 'All';
   final TextEditingController _roomSearchController = TextEditingController();
   String _staffName = 'Front Desk';
   String _userEmail = 'nirajvekariya2209@gmail.com';
   String _resortName = '';
   late String _userRole;
   final GlobalKey<HotelAdminDashboardViewState> _adminDashboardKey = GlobalKey();
+  final GlobalKey<DashboardPeriodSummaryCardState> _receptionistSummaryKey = GlobalKey();
 
   bool get _isHotelAdmin => _userRole == 'HOTEL_ADMIN';
 
@@ -62,6 +62,8 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
       switch (_selectedTabIndex) {
         case 2:
           return 'Guest Directory';
+        case 3:
+          return 'Staff Management';
         case 4:
           return 'More';
         default:
@@ -87,6 +89,10 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
       switch (_selectedTabIndex) {
         case 2:
           return 'Search and manage guest records';
+        case 3:
+          return 'Manage hotel staff directory';
+        case 4:
+          return 'Account & hotel settings';
         default:
           return null;
       }
@@ -98,6 +104,8 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
         return 'Currently staying guests';
       case 3:
         return 'Search and manage guest records';
+      case 4:
+        return 'Account & hotel settings';
       default:
         return null;
     }
@@ -105,7 +113,8 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
 
   bool get _showMobileHeader {
     if (!_isHotelAdmin) return true;
-    return _selectedTabIndex != 1 && _selectedTabIndex != 3;
+    // Rooms (1) keeps its own chrome; Staff (3) uses the same More-tab header.
+    return _selectedTabIndex != 1;
   }
 
   @override
@@ -289,11 +298,6 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
                   staffName: _staffName,
                   role: isHotelAdmin ? 'HOTEL ADMIN' : 'FRONT DESK',
                   availableRooms: state.stats.availableVacant,
-                  onNotificationTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const NotificationsPage()),
-                    );
-                  },
                   onProfileTap: () {
                     _showProfileBottomSheet(context);
                   },
@@ -539,6 +543,7 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
       color: AppColors.primary,
       onRefresh: () async {
         context.read<DashboardBloc>().add(RefreshDashboardDataEvent());
+        await (_receptionistSummaryKey.currentState?.reload() ?? Future<void>.value());
       },
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -610,6 +615,16 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
                     );
                   },
                 ),
+                const SizedBox(height: 14),
+                DashboardPeriodSummaryCard(
+                  key: _receptionistSummaryKey,
+                  loader: ({required DateTime startDate, required DateTime endDate}) {
+                    return DashboardRepository().fetchDashboardSummary(
+                      startDate: startDate,
+                      endDate: endDate,
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -644,29 +659,18 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
     // Trust rooms API status (OCCUPIED / AVAILABLE / …) for Booked counts.
     final categoryGroups = RoomCategoryGroup.groupFromRoomTypesAndRooms(state.roomTypes, state.allRooms);
 
-    final totalReadyCount = state.allRooms.where((r) => r.status == RoomStatus.available).length;
-
-    // Filter categories based on search query & filter chip
+    // Search only (All / Available / category chips removed)
     final query = _roomsSearchQuery.trim().toLowerCase();
     final filteredCategories = categoryGroups.where((group) {
+      if (query.isEmpty) return true;
       final catName = group.categoryName.toLowerCase();
-      final rooms = group.rooms;
-
-      // Filter chip matching
-      if (_roomsFilterType == 'Ready Only') {
-        if (!rooms.any((r) => r.status == RoomStatus.available)) return false;
-      } else if (_roomsFilterType != 'All') {
-        if (!catName.contains(_roomsFilterType.toLowerCase())) return false;
-      }
-
-      // Search query matching
-      if (query.isNotEmpty) {
-        final matchesCat = catName.contains(query);
-        final matchesRoom = rooms.any((r) => r.roomNumber.toLowerCase().contains(query) || r.floor.toLowerCase().contains(query));
-        if (!matchesCat && !matchesRoom) return false;
-      }
-
-      return true;
+      final matchesCat = catName.contains(query);
+      final matchesRoom = group.rooms.any(
+        (r) =>
+            r.roomNumber.toLowerCase().contains(query) ||
+            r.floor.toLowerCase().contains(query),
+      );
+      return matchesCat || matchesRoom;
     }).toList();
 
     return RefreshIndicator(
@@ -677,7 +681,6 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
         children: [
-          // 1. Search & Filter Bar
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -714,29 +717,8 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
             ),
           ),
 
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
 
-          // Quick Filter Chips
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildFilterChip('All', 'All (${categoryGroups.length})'),
-                const SizedBox(width: 6),
-                _buildFilterChip('Ready Only', 'Available ($totalReadyCount)'),
-                ...categoryGroups.map((group) {
-                  return Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: _buildFilterChip(group.categoryName, group.categoryName),
-                  );
-                }),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 6),
-
-          // 4. Category Cards List
           if (filteredCategories.isEmpty)
             Container(
               padding: const EdgeInsets.all(32),
@@ -751,27 +733,30 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
                   const Icon(Icons.search_off_rounded, size: 44, color: AppColors.textMuted),
                   const SizedBox(height: 12),
                   Text(
-                    'No categories match your filter',
-                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                    'No categories found',
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Try changing your search term or select another category filter.',
+                    'Try a different category name or room number.',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                   ),
-                  const SizedBox(height: 14),
-                  TextButton.icon(
-                    onPressed: () {
-                      _roomSearchController.clear();
-                      setState(() {
-                        _roomsSearchQuery = '';
-                        _roomsFilterType = 'All';
-                      });
-                    },
-                    icon: const Icon(Icons.refresh_rounded, size: 16),
-                    label: const Text('Reset Filters'),
-                  ),
+                  if (_roomsSearchQuery.isNotEmpty) ...[
+                    const SizedBox(height: 14),
+                    TextButton.icon(
+                      onPressed: () {
+                        _roomSearchController.clear();
+                        setState(() => _roomsSearchQuery = '');
+                      },
+                      icon: const Icon(Icons.refresh_rounded, size: 16),
+                      label: const Text('Clear Search'),
+                    ),
+                  ],
                 ],
               ),
             )
@@ -782,41 +767,6 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
 
           const SizedBox(height: 6),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFilterChip(String key, String label) {
-    final isSelected = _roomsFilterType == key;
-    return InkWell(
-      onTap: () => setState(() => _roomsFilterType = key),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5.5),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.border,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.22),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1.5),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            color: isSelected ? Colors.white : AppColors.textSecondary,
-          ),
-        ),
       ),
     );
   }

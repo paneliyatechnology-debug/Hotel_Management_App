@@ -151,7 +151,10 @@ class _Step5KeycardSummaryState extends State<Step5KeycardSummary> {
                   '${widget.formData.secondGuestName}${widget.formData.secondGuestPhone != null && widget.formData.secondGuestPhone!.isNotEmpty ? " (${widget.formData.secondGuestPhone})" : ""}',
                 ),
               _buildSummaryRow('Total Guests', '${widget.formData.numberOfGuests}'),
-              _buildSummaryRow('Assigned Room', 'Room ${widget.formData.selectedRoomNumber} (${widget.formData.roomType})'),
+              _buildSummaryRow(
+                widget.formData.selectedRoomCount > 1 ? 'Assigned Rooms' : 'Assigned Room',
+                'Room ${widget.formData.selectedRoomNumber} (${widget.formData.roomType})',
+              ),
               _buildSummaryRow('Stay Period', '${DateFormatter.formatDate(widget.formData.checkInDate)} to ${DateFormatter.formatDate(widget.formData.checkOutDate)} (${widget.formData.totalNights} Nights)'),
               if (widget.formData.contactPhone.isNotEmpty)
                 _buildSummaryRow('Contact / Phone', widget.formData.contactPhone),

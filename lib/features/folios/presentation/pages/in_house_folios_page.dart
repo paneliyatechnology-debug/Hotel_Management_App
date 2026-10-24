@@ -12,11 +12,9 @@ import '../../../dashboard/data/models/guest_folio_model.dart';
 import '../../../dashboard/presentation/bloc/dashboard_bloc.dart';
 import '../../../dashboard/presentation/bloc/dashboard_event.dart';
 import '../../../dashboard/presentation/bloc/dashboard_state.dart';
-import '../widgets/guest_booking_filter_sheet.dart';
 import '../widgets/guest_folio_details_dialog.dart';
 import '../widgets/checkout_settlement_dialog.dart';
 import 'in_house_guest_details_page.dart';
-import '../../../rooms/data/models/room_model.dart';
 import '../../../dashboard/presentation/widgets/dashboard_shimmer_loader.dart';
 
 class InHouseFoliosPage extends StatefulWidget {
@@ -31,7 +29,6 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
-  String _selectedFilter = 'All';
   BookingListQuery _query = const BookingListQuery();
   Timer? _searchTimer;
   bool _isSearchFocused = false;
@@ -91,84 +88,7 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
     });
   }
 
-  String _ymd(DateTime value) {
-    final month = value.month.toString().padLeft(2, '0');
-    final day = value.day.toString().padLeft(2, '0');
-    return '${value.year}-$month-$day';
-  }
-
-  void _selectQuickFilter(String filterKey) {
-    final today = _ymd(DateTime.now());
-    var next = BookingListQuery(search: _searchQuery, limit: 10);
-    switch (filterKey) {
-      case 'In-House':
-        next = next.copyWith(bookingStatus: 'CHECKED_IN');
-      case 'Departed':
-        next = next.copyWith(bookingStatus: 'CHECKED_OUT');
-      case 'Checkout Today':
-        next = next.copyWith(checkOutFrom: today, checkOutTo: today);
-      case 'Payment Pending':
-        next = next.copyWith(paymentStatus: 'PENDING');
-      default:
-        break;
-    }
-    setState(() {
-      _selectedFilter = filterKey;
-      _query = next;
-    });
-    if (!_isWidgetTest && filterKey != 'Keycard Issue') {
-      _reloadGuests();
-    }
-  }
-
-  String _chipForQuery(BookingListQuery query) {
-    final noText = query.roomId.isEmpty &&
-        query.bookingNumber.isEmpty &&
-        query.primaryGuestName.isEmpty &&
-        query.guestName.isEmpty &&
-        query.mobileNumber.isEmpty &&
-        query.checkInFrom.isEmpty &&
-        query.checkInTo.isEmpty;
-    if (query.bookingStatus == 'CHECKED_IN' && query.paymentStatus.isEmpty && query.checkOutFrom.isEmpty && noText) {
-      return 'In-House';
-    }
-    if (query.bookingStatus == 'CHECKED_OUT' && query.paymentStatus.isEmpty && query.checkOutFrom.isEmpty && noText) {
-      return 'Departed';
-    }
-    if (query.paymentStatus == 'PENDING' && query.bookingStatus.isEmpty && query.checkOutFrom.isEmpty && noText) {
-      return 'Payment Pending';
-    }
-    if (query.checkOutFrom.isNotEmpty &&
-        query.checkOutFrom == query.checkOutTo &&
-        query.bookingStatus.isEmpty &&
-        query.paymentStatus.isEmpty &&
-        noText) {
-      return 'Checkout Today';
-    }
-    if (!query.hasSheetFilters) return 'All';
-    return 'Filtered';
-  }
-
-  Future<void> _openGuestFilters(List<RoomModel> rooms) async {
-    final picked = await GuestBookingFilterSheet.show(
-      context,
-      query: _query.copyWith(search: _searchQuery),
-      rooms: rooms,
-    );
-    if (picked == null || !mounted) return;
-    setState(() {
-      _query = picked.copyWith(search: _searchQuery);
-      _selectedFilter = _chipForQuery(_query);
-    });
-    if (!_isWidgetTest) _reloadGuests();
-  }
-
-  bool _matchesLocalTestFilter(GuestFolioModel folio) {
-    if (_selectedFilter == 'In-House' && folio.status != FolioStatus.inHouse) return false;
-    if (_selectedFilter == 'Departed' && folio.status != FolioStatus.departed) return false;
-    if (_selectedFilter == 'Checkout Today' && !folio.isCheckoutToday) return false;
-    if (_selectedFilter == 'Payment Pending' && !folio.hasPendingPayment) return false;
-    if (_selectedFilter == 'Keycard Issue' && !folio.hasKeycardIssue) return false;
+  bool _matchesLocalSearch(GuestFolioModel folio) {
     if (_searchQuery.isEmpty) return true;
     final query = _searchQuery.toLowerCase();
     return folio.guestName.toLowerCase().contains(query) ||
@@ -248,41 +168,24 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
           return const InHouseShimmerLoader();
         }
         final allFolios = state.folios;
-        final inHouseCount = allFolios.where((f) => f.status == FolioStatus.inHouse).length;
-        final departedCount = allFolios.where((f) => f.status == FolioStatus.departed).length;
-        final checkoutTodayCount = allFolios.where((f) => f.isCheckoutToday).length;
-        final paymentPendingCount = allFolios.where((f) => f.hasPendingPayment).length;
-
-        final filteredFolios = _isWidgetTest
-            ? allFolios.where(_matchesLocalTestFilter).toList()
-            : (_selectedFilter == 'Keycard Issue'
-                ? allFolios.where((folio) => folio.hasKeycardIssue).toList()
-                : allFolios);
+        final filteredFolios =
+            _isWidgetTest ? allFolios.where(_matchesLocalSearch).toList() : allFolios;
 
         final isWideScreen = MediaQuery.of(context).size.width >= 900;
-        final effectiveSelectedId = _selectedFolioId ?? (filteredFolios.isNotEmpty ? filteredFolios.first.id : (allFolios.isNotEmpty ? allFolios.first.id : null));
+        final effectiveSelectedId = _selectedFolioId ??
+            (filteredFolios.isNotEmpty
+                ? filteredFolios.first.id
+                : (allFolios.isNotEmpty ? allFolios.first.id : null));
 
         if (isWideScreen) {
           return Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Left side: Folios list
               Expanded(
                 flex: 5,
-                child: _buildFoliosScrollContent(
-                  context,
-                  state,
-                  filteredFolios,
-                  allFolios.length,
-                  inHouseCount,
-                  departedCount,
-                  checkoutTodayCount,
-                  paymentPendingCount,
-                  state.allRooms,
-                ),
+                child: _buildFoliosScrollContent(context, filteredFolios),
               ),
               Container(width: 1, color: const Color(0xFFE2E8F0)),
-              // Right side: Selected guest details
               Expanded(
                 flex: 6,
                 child: effectiveSelectedId != null
@@ -301,31 +204,14 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
           );
         }
 
-        return _buildFoliosScrollContent(
-          context,
-          state,
-          filteredFolios,
-          allFolios.length,
-          inHouseCount,
-          departedCount,
-          checkoutTodayCount,
-          paymentPendingCount,
-          state.allRooms,
-        );
+        return _buildFoliosScrollContent(context, filteredFolios);
       },
     );
   }
 
   Widget _buildFoliosScrollContent(
     BuildContext context,
-    DashboardState state,
     List<GuestFolioModel> filteredFolios,
-    int totalCount,
-    int inHouseCount,
-    int departedCount,
-    int checkoutTodayCount,
-    int paymentPendingCount,
-    List<RoomModel> rooms,
   ) {
     return RefreshIndicator(
       color: AppColors.primary,
@@ -339,117 +225,60 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Search Bar & Filter Button
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _isSearchFocused ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
-                        width: _isSearchFocused ? 1.5 : 1.0,
-                      ),
-                      boxShadow: const [
-                        BoxShadow(color: Color(0x04000000), blurRadius: 4, offset: Offset(0, 1)),
-                      ],
-                    ),
-                    child: TextField(
-                      focusNode: _searchFocusNode,
-                      controller: _searchController,
-                      onChanged: _onSearchChanged,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: AppColors.textPrimary,
-                      ),
-                      cursorColor: const Color(0xFF0F766E),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                        hintText: 'Search guest name, room, phone, booking...',
-                        hintStyle: GoogleFonts.inter(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w400,
-                          color: const Color(0xFF94A3B8),
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.search_rounded,
-                          size: 20,
-                          color: Color(0xFF94A3B8),
-                        ),
-                        suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                splashRadius: 16,
-                                icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFF64748B)),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  _onSearchChanged('');
-                                },
-                              )
-                            : null,
-                        border: InputBorder.none,
-                      ),
-                    ),
-                  ),
+            // Search only
+            Container(
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _isSearchFocused ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
+                  width: _isSearchFocused ? 1.5 : 1.0,
                 ),
-                const SizedBox(width: 8),
-                // Filter Settings Button
-                InkWell(
-                  onTap: () => _openGuestFilters(rooms),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Container(
-                    height: 44,
-                    width: 44,
-                    decoration: BoxDecoration(
-                      color: _query.hasSheetFilters ? const Color(0xFF0F766E) : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _query.hasSheetFilters ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
-                      ),
-                      boxShadow: const [
-                        BoxShadow(color: Color(0x04000000), blurRadius: 4, offset: Offset(0, 1)),
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.tune_rounded,
-                      size: 20,
-                      color: _query.hasSheetFilters ? Colors.white : const Color(0xFF0F766E),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            if (_query.hasSheetFilters) ...[
-              _buildActiveFilterLine(),
-              const SizedBox(height: 8),
-            ],
-
-            // Filter Chips Bar
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _buildFilterPill('All', 'All ($totalCount)'),
-                  const SizedBox(width: 6),
-                  _buildFilterPill('In-House', 'In-House ($inHouseCount)'),
-                  const SizedBox(width: 6),
-                  _buildFilterPill('Departed', 'Departed ($departedCount)'),
-                  const SizedBox(width: 6),
-                  _buildFilterPill('Checkout Today', 'Checkout Today ($checkoutTodayCount)'),
-                  const SizedBox(width: 6),
-                  _buildFilterPill('Payment Pending', 'Payment Pending ($paymentPendingCount)'),
-                  const SizedBox(width: 6),
-                  _buildFilterPill('Keycard Issue', 'Keycard Issue'),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x04000000), blurRadius: 4, offset: Offset(0, 1)),
                 ],
+              ),
+              child: TextField(
+                focusNode: _searchFocusNode,
+                controller: _searchController,
+                onChanged: _onSearchChanged,
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textPrimary,
+                ),
+                cursorColor: const Color(0xFF0F766E),
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  hintText: 'Search guest name, room, phone, booking...',
+                  hintStyle: GoogleFonts.inter(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w400,
+                    color: const Color(0xFF94A3B8),
+                  ),
+                  prefixIcon: const Icon(
+                    Icons.search_rounded,
+                    size: 20,
+                    color: Color(0xFF94A3B8),
+                  ),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          splashRadius: 16,
+                          icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFF64748B)),
+                          onPressed: () {
+                            _searchController.clear();
+                            _onSearchChanged('');
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                ),
               ),
             ),
             const SizedBox(height: 12),
 
-            // Folios List
             if (filteredFolios.isEmpty)
               Container(
                 width: double.infinity,
@@ -472,28 +301,30 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
                     const SizedBox(height: 12),
                     Text(
                       'No Matching Folios Found',
-                      style: GoogleFonts.inter(fontSize: 14.5, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                      style: GoogleFonts.inter(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Try searching with a different guest name, phone, or clear your filters.',
+                      'Try searching with a different guest name, phone, or booking ID.',
                       style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                       textAlign: TextAlign.center,
                     ),
-                    if (_searchQuery.isNotEmpty || _selectedFilter != 'All') ...[
+                    if (_searchQuery.isNotEmpty) ...[
                       const SizedBox(height: 14),
                       TextButton.icon(
                         onPressed: () {
                           _searchController.clear();
-                          setState(() {
-                            _searchQuery = '';
-                            _selectedFilter = 'All';
-                            _query = const BookingListQuery();
-                          });
-                          if (!_isWidgetTest) _reloadGuests();
+                          _onSearchChanged('');
                         },
                         icon: const Icon(Icons.refresh_rounded, size: 16),
-                        label: Text('Reset Filters', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12)),
+                        label: Text(
+                          'Clear Search',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12),
+                        ),
                       ),
                     ],
                   ],
@@ -510,84 +341,6 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
                 },
               ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActiveFilterLine() {
-    final parts = <String>[
-      if (_query.bookingStatus.isNotEmpty) _query.bookingStatus.replaceAll('_', ' '),
-      if (_query.paymentStatus.isNotEmpty) _query.paymentStatus,
-      if (_query.roomId.isNotEmpty) 'Room ${_query.roomId}',
-      if (_query.bookingNumber.isNotEmpty) _query.bookingNumber,
-      if (_query.primaryGuestName.isNotEmpty) _query.primaryGuestName,
-      if (_query.guestName.isNotEmpty) _query.guestName,
-      if (_query.mobileNumber.isNotEmpty) _query.mobileNumber,
-      if (_query.checkInFrom.isNotEmpty || _query.checkInTo.isNotEmpty)
-        'In ${_query.checkInFrom} – ${_query.checkInTo}',
-      if (_query.checkOutFrom.isNotEmpty || _query.checkOutTo.isNotEmpty)
-        'Out ${_query.checkOutFrom} – ${_query.checkOutTo}',
-    ];
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            parts.join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F766E)),
-          ),
-        ),
-        TextButton(
-          onPressed: () {
-            setState(() {
-              _selectedFilter = 'All';
-              _query = BookingListQuery(search: _searchQuery);
-            });
-            if (!_isWidgetTest) _reloadGuests();
-          },
-          style: TextButton.styleFrom(
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-          ),
-          child: Text('Clear', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800)),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilterPill(String filterKey, String label) {
-    final isSelected = _selectedFilter == filterKey;
-    return InkWell(
-      onTap: () => _selectQuickFilter(filterKey),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF0F766E) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
-            width: 1,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF0F766E).withValues(alpha: 0.22),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1.5),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-            color: isSelected ? Colors.white : const Color(0xFF334155),
-          ),
         ),
       ),
     );

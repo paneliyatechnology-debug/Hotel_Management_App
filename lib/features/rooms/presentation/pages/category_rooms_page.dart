@@ -38,6 +38,7 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
   String _selectedFloor = 'All';
   String _searchQuery = '';
   bool _isSearchOpen = false;
+  final Set<String> _selectedAvailableRoomIds = <String>{};
 
   @override
   void initState() {
@@ -57,44 +58,51 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
     });
   }
 
+  void _toggleAvailableRoom(RoomModel room) {
+    if (room.status != RoomStatus.available) return;
+    setState(() {
+      if (_selectedAvailableRoomIds.contains(room.id)) {
+        _selectedAvailableRoomIds.remove(room.id);
+      } else {
+        _selectedAvailableRoomIds.add(room.id);
+      }
+    });
+  }
+
+  List<RoomModel> _selectedAvailableRooms(List<RoomModel> categoryRooms) {
+    return categoryRooms
+        .where((room) =>
+            room.status == RoomStatus.available && _selectedAvailableRoomIds.contains(room.id))
+        .toList();
+  }
+
   void _openGuestForm(RoomModel room) {
-    context.read<CheckInBloc>().add(InitCheckInWizardEvent(preselectedRoom: room));
+    _openGuestFormForRooms([room]);
+  }
+
+  void _openGuestFormForRooms(List<RoomModel> rooms) {
+    if (rooms.isEmpty) return;
+    context.read<CheckInBloc>().add(
+          InitCheckInWizardEvent(
+            preselectedRoom: rooms.first,
+            preselectedRooms: rooms,
+          ),
+        );
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => const CheckInWizardPage(),
       ),
-    );
+    ).then((_) {
+      if (!mounted) return;
+      setState(() => _selectedAvailableRoomIds.clear());
+    });
   }
 
   Future<void> _openUpdateBooking(RoomModel room) async {
-    final folio = await _resolveInHouseFolio(room);
+    _showLoadingDialog();
+    final booking = await _fetchBookingForRoom(room);
     if (!mounted) return;
-    if (folio == null) {
-      AppSnackBar.showError(context, 'No checked-in guest was found for this room.', title: 'Update booking');
-      return;
-    }
-    final bookingId = _bookingApiId(folio);
-    if (bookingId.isEmpty) {
-      AppSnackBar.showError(context, 'Could not find this booking.', title: 'Update booking');
-      return;
-    }
-
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const PopScope(
-        canPop: false,
-        child: Center(
-          child: CircularProgressIndicator(
-            color: Colors.white,
-            strokeWidth: 3,
-          ),
-        ),
-      ),
-    );
-    final booking = await context.read<CheckInBloc>().repository.fetchBooking(bookingId);
-    if (!mounted) return;
-    Navigator.of(context).pop();
+    Navigator.of(context).pop(); // loading
     if (booking == null) {
       AppSnackBar.showError(context, 'Could not load this booking.', title: 'Update booking');
       return;
@@ -111,18 +119,25 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
     );
   }
 
-  String _bookingApiId(GuestFolioModel folio) {
+  /// Prefer rooms API `current_booking_id`, then folio id / booking id.
+  String? _roomBookingApiId(RoomModel room, [GuestFolioModel? folio]) {
+    final fromRoom = (room.currentBookingId ?? room.currentGuestFolioId ?? '').trim();
+    if (fromRoom.isNotEmpty && fromRoom.toLowerCase() != 'null') return fromRoom;
+    if (folio == null) return null;
     final id = folio.id.trim();
     if (int.tryParse(id) != null) return id;
     final bookingId = (folio.bookingId ?? '').trim();
     if (int.tryParse(bookingId) != null) return bookingId;
-    return '';
+    return bookingId.isNotEmpty ? bookingId : null;
   }
 
   Future<void> _checkoutOccupiedRoom(RoomModel room) async {
-    final folio = await _resolveInHouseFolio(room);
+    _showLoadingDialog();
+    // GET /api/v1/bookings/{current_booking_id}
+    final booking = await _fetchBookingForRoom(room);
     if (!mounted) return;
-    if (folio == null) {
+    Navigator.of(context).pop(); // loading
+    if (booking == null) {
       AppSnackBar.showError(
         context,
         'No checked-in guest was found for this room.',
@@ -130,11 +145,57 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
       );
       return;
     }
-    CheckoutSettlementDialog.show(context, folio);
+    CheckoutSettlementDialog.show(context, booking);
+  }
+
+  void _showLoadingDialog() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Center(
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 3,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Loads booking via GET /api/v1/bookings/{current_booking_id}.
+  Future<GuestFolioModel?> _fetchBookingForRoom(RoomModel room) async {
+    final repo = context.read<DashboardBloc>().repository;
+    final bookingId = _roomBookingApiId(room);
+    if (bookingId != null && bookingId.isNotEmpty) {
+      try {
+        final booking = await repo.fetchBooking(bookingId);
+        if (booking != null) return booking;
+      } catch (_) {}
+    }
+
+    // Fallback: match checked-in list, then fetch by that booking id.
+    final folio = await _resolveInHouseFolio(room);
+    if (folio == null) return null;
+    final fallbackId = _roomBookingApiId(room, folio);
+    if (fallbackId == null || fallbackId.isEmpty) return folio;
+    try {
+      return await repo.fetchBooking(fallbackId) ?? folio;
+    } catch (_) {
+      return folio;
+    }
   }
 
   Future<GuestFolioModel?> _resolveInHouseFolio(RoomModel room) async {
     final bloc = context.read<DashboardBloc>();
+    final bookingId = _roomBookingApiId(room);
+    if (bookingId != null && bookingId.isNotEmpty) {
+      try {
+        final byId = await bloc.repository.fetchBooking(bookingId);
+        if (byId != null) return byId;
+      } catch (_) {}
+    }
     final local = _checkedInFolioFor(room, bloc.state.folios);
     if (local != null) return local;
     final repo = bloc.repository;
@@ -155,12 +216,11 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
 
   GuestFolioModel? _checkedInFolioFor(RoomModel room, List<GuestFolioModel> folios) {
     final roomDigits = room.roomNumber.replaceAll(RegExp(r'[^0-9]'), '');
+    final bookingKey = (room.currentBookingId ?? room.currentGuestFolioId ?? '').trim();
     for (final folio in folios) {
       if (folio.status != FolioStatus.inHouse) continue;
-      final folioId = room.currentGuestFolioId;
-      if (folioId != null &&
-          folioId.isNotEmpty &&
-          (folio.id == folioId || folio.bookingId == folioId)) {
+      if (bookingKey.isNotEmpty &&
+          (folio.id == bookingKey || folio.bookingId == bookingKey)) {
         return folio;
       }
       if (room.id.isNotEmpty && folio.roomId != null && folio.roomId == room.id) {
@@ -483,8 +543,63 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
                 Column(
                   children: filteredRooms.map((room) => _buildRoomCard(context, room, state.folios)).toList(),
                 ),
+              if (_selectedAvailableRoomIds.isNotEmpty) const SizedBox(height: 72),
             ],
           ),
+          bottomNavigationBar: _selectedAvailableRoomIds.isEmpty
+              ? null
+              : SafeArea(
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${_selectedAvailableRoomIds.length} room${_selectedAvailableRoomIds.length == 1 ? '' : 's'} selected',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => setState(() => _selectedAvailableRoomIds.clear()),
+                          child: Text(
+                            'Clear',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () {
+                            final selected = _selectedAvailableRooms(categoryRooms);
+                            _openGuestFormForRooms(selected);
+                          },
+                          child: Text(
+                            'Check In (${_selectedAvailableRoomIds.length})',
+                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
         );
       },
     );
@@ -618,13 +733,17 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
     final roomGuest = room.currentGuestName?.trim() ?? '';
     final guestName = roomGuest.isNotEmpty ? roomGuest : folioGuest;
     final detail = isOccupied && guestName.isNotEmpty ? guestName : room.bedInfoLabel;
+    final isMultiSelected = isAvailable && _selectedAvailableRoomIds.contains(room.id);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isMultiSelected ? const Color(0xFFF0FDFA) : Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: isMultiSelected ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
+          width: isMultiSelected ? 1.4 : 1,
+        ),
         boxShadow: const [
           BoxShadow(
             color: Color(0x080F172A),
@@ -639,7 +758,7 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
         child: InkWell(
           onTap: () {
             if (isAvailable) {
-              _openGuestForm(room);
+              _toggleAvailableRoom(room);
             } else if (isOccupied) {
               _checkoutOccupiedRoom(room);
             } else if (isCleaning) {
@@ -662,6 +781,7 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
           },
           borderRadius: BorderRadius.circular(14),
           child: Padding(
+            // Identical left padding for all rooms → bed icons stay aligned.
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -669,18 +789,23 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
+                    // Bed icon container — checkbox only stacks on its top-left
+                    SizedBox(
                       width: 44,
                       height: 44,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: squircleBg,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
                       child: Stack(
-                        alignment: Alignment.center,
+                        clipBehavior: Clip.none,
                         children: [
-                          Icon(Icons.bed_rounded, size: 22, color: squircleColor),
+                          Container(
+                            width: 44,
+                            height: 44,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: squircleBg,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(Icons.bed_rounded, size: 22, color: squircleColor),
+                          ),
                           ExcludeSemantics(
                             child: Opacity(
                               opacity: 0,
@@ -691,6 +816,33 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
                               ),
                             ),
                           ),
+                          if (isAvailable)
+                            Positioned(
+                              top: -6,
+                              left: -6,
+                              child: SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: Checkbox(
+                                  value: isMultiSelected,
+                                  onChanged: (_) => _toggleAvailableRoom(room),
+                                  activeColor: const Color(0xFF0F766E),
+                                  checkColor: Colors.white,
+                                  fillColor: WidgetStateProperty.resolveWith((states) {
+                                    if (states.contains(WidgetState.selected)) {
+                                      return const Color(0xFF0F766E);
+                                    }
+                                    return Colors.transparent;
+                                  }),
+                                  side: const BorderSide(color: Color(0xFF0F766E), width: 1.4),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -780,10 +932,29 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
                             ],
                           )
                         : isAvailable
-                            ? _roomActionButton(
-                                label: 'Check In',
-                                icon: Icons.arrow_forward_rounded,
-                                iconAfterLabel: true,
+                            ? GestureDetector(
+                                onTap: () {
+                                  final selected = _selectedAvailableRoomIds.isEmpty
+                                      ? [room]
+                                      : [
+                                          ..._selectedAvailableRooms(
+                                            context.read<DashboardBloc>().state.allRooms,
+                                          ),
+                                          if (!_selectedAvailableRoomIds.contains(room.id)) room,
+                                        ];
+                                  final unique = <RoomModel>[];
+                                  for (final item in selected) {
+                                    if (unique.any((r) => r.id == item.id)) continue;
+                                    unique.add(item);
+                                  }
+                                  _openGuestFormForRooms(unique.isEmpty ? [room] : unique);
+                                },
+                                behavior: HitTestBehavior.opaque,
+                                child: _roomActionButton(
+                                  label: 'Check In',
+                                  icon: Icons.arrow_forward_rounded,
+                                  iconAfterLabel: true,
+                                ),
                               )
                             : isCleaning
                                 ? _roomActionButton(

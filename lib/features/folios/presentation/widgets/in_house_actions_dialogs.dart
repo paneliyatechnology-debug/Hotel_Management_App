@@ -7,6 +7,7 @@ import '../../../../core/utils/date_formatter.dart';
 import '../../../dashboard/data/models/guest_folio_model.dart';
 import '../../../dashboard/presentation/bloc/dashboard_bloc.dart';
 import '../../../dashboard/presentation/bloc/dashboard_event.dart';
+import '../../../payments/presentation/widgets/payment_method_dropdown.dart';
 import 'checkout_settlement_dialog.dart';
 
 class InHouseActionsDialogs {
@@ -303,22 +304,12 @@ class InHouseActionsDialogs {
                   ),
                   const SizedBox(height: 14),
 
-                  // Payment Method
+                  // Payment Method (from /api/v1/payment-methods)
                   Text('Payment Method', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
                   const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    children: ['UPI', 'Cash', 'Credit Card', 'Debit Card', 'Bank Transfer'].map((m) {
-                      final isSel = selectedMethod == m;
-                      return ChoiceChip(
-                        label: Text(m, style: GoogleFonts.inter(fontSize: 11, fontWeight: isSel ? FontWeight.w700 : FontWeight.w500)),
-                        selected: isSel,
-                        selectedColor: AppColors.primarySurface,
-                        onSelected: (val) {
-                          if (val) setModalState(() => selectedMethod = m);
-                        },
-                      );
-                    }).toList(),
+                  PaymentMethodChips(
+                    value: selectedMethod,
+                    onChanged: (code) => setModalState(() => selectedMethod = code),
                   ),
                   const SizedBox(height: 14),
 

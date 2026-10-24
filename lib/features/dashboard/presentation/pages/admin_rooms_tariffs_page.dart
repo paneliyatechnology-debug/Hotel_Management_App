@@ -1677,9 +1677,10 @@ Future<void> _showAddRoomModal({RoomModel? room}) async {
         label = 'AVAILABLE';
         break;
       case RoomStatus.occupied:
-        dotColor = const Color(0xFFEF4444);
-        bgColor = const Color(0xFFFEF2F2);
-        textColor = const Color(0xFFDC2626);
+        // Same teal palette as Available — only Checkout/Delete stay red.
+        dotColor = const Color(0xFF10B981);
+        bgColor = const Color(0xFFECFDF5);
+        textColor = const Color(0xFF059669);
         label = 'OCCUPIED';
         break;
       case RoomStatus.cleaning:
@@ -1728,319 +1729,256 @@ Future<void> _showAddRoomModal({RoomModel? room}) async {
     );
   }
 
+  ({Color accent, Color soft, Color border}) _roomStatusColors(RoomStatus status) {
+    switch (status) {
+      case RoomStatus.available:
+        return (
+          accent: const Color(0xFF059669),
+          soft: const Color(0xFFECFDF5),
+          border: const Color(0xFFA7F3D0),
+        );
+      case RoomStatus.occupied:
+        return (
+          accent: const Color(0xFF059669),
+          soft: const Color(0xFFECFDF5),
+          border: const Color(0xFFA7F3D0),
+        );
+      case RoomStatus.cleaning:
+        return (
+          accent: const Color(0xFFD97706),
+          soft: const Color(0xFFFFFBEB),
+          border: const Color(0xFFFDE68A),
+        );
+      case RoomStatus.maintenance:
+        return (
+          accent: const Color(0xFF64748B),
+          soft: const Color(0xFFF1F5F9),
+          border: const Color(0xFFE2E8F0),
+        );
+    }
+  }
+
   Widget _buildRoomCard(RoomModel room) {
+    final colors = _roomStatusColors(room.status);
+    final roomNo = room.roomNumber.replaceAll('#', '').trim();
+    final floorLabel = room.floor.toLowerCase().contains('floor')
+        ? room.floor
+        : 'Floor ${room.floor}';
+    final guestName = room.currentGuestName?.trim() ?? '';
+    const red = Color(0xFFDC2626);
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 9),
+      margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.0),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
-          BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
+          BoxShadow(color: Color(0x080F172A), blurRadius: 6, offset: Offset(0, 2)),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  constraints: const BoxConstraints(minWidth: 42, minHeight: 42),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE6F7F2),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF99F6E4), width: 0.8),
-                  ),
-                  alignment: Alignment.center,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Text(
-                        'ROOM',
-                        style: GoogleFonts.inter(
-                          fontSize: 7.5,
-                          fontWeight: FontWeight.w800,
-                          color: const Color(0xFF0F766E),
-                          letterSpacing: 0.5,
-                          height: 1.0,
+                      Container(
+                        width: 40,
+                        height: 40,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: colors.soft,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: colors.border),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
                         child: Text(
-                          room.roomNumber.replaceAll('#', ''),
+                          roomNo,
                           style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
-                            color: const Color(0xFF0F766E),
-                            height: 1.0,
+                            color: colors.accent,
+                            height: 1,
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            'Room ${room.roomNumber.replaceAll('#', '')}',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF0F172A),
-                            ),
-                          ),
-                          if (room.roomType.isNotEmpty) ...[
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                '• ${room.roomType.toUpperCase()}',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: const Color(0xFF64748B),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    room.roomType.isNotEmpty
+                                        ? 'Room $roomNo · ${room.roomType}'
+                                        : 'Room $roomNo',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w800,
+                                      color: const Color(0xFF0F172A),
+                                      height: 1.1,
+                                    ),
+                                  ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                const SizedBox(width: 4),
+                                _buildRoomStatusBadge(room.status),
+                              ],
+                            ),
+                            const SizedBox(height: 1),
+                            Text(
+                              '${CurrencyFormatter.format(room.pricePerNight)}/night · $floorLabel'
+                              '${room.bedInfoLabel.trim().isNotEmpty ? ' · ${room.bedInfoLabel.trim()}' : ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF64748B),
+                                height: 1.2,
                               ),
                             ),
                           ],
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Flexible(
-                            fit: FlexFit.loose,
-                            child: Text(
-                              '${CurrencyFormatter.format(room.pricePerNight)}/night',
-                              style: GoogleFonts.inter(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF0F766E),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            fit: FlexFit.loose,
-                            child: Text(
-                              '• ${room.floor.toLowerCase().contains('floor') ? room.floor : 'Floor ${room.floor}'}',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: const Color(0xFF64748B),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        room.bedInfoLabel,
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF334155),
-                          height: 1.3,
                         ),
                       ),
-                      if (room.keyCode.trim().isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          'Key ${room.keyCode.trim()}',
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF0F766E),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
-                ),
-                const SizedBox(width: 8),
-                _buildRoomStatusBadge(room.status),
-              ],
-            ),
-            if (room.notes.isNotEmpty) ...[
-              const SizedBox(height: 5),
-              Row(
-                children: [
-                  const Icon(Icons.note_alt_outlined, size: 11.5, color: Color(0xFF94A3B8)),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      room.notes,
-                      style: GoogleFonts.inter(fontSize: 10.5, fontStyle: FontStyle.italic, color: const Color(0xFF64748B)),
+                  if (guestName.isNotEmpty || room.notes.trim().isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      [
+                        if (guestName.isNotEmpty) guestName,
+                        if (room.notes.trim().isNotEmpty) room.notes.trim(),
+                      ].join(' · '),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF64748B),
+                      ),
                     ),
+                  ],
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      if (room.status == RoomStatus.occupied)
+                        Expanded(
+                          child: _roomActionBtn(
+                            label: 'Checkout',
+                            icon: Icons.logout_rounded,
+                            fg: red,
+                            bg: const Color(0xFFFFF1F2),
+                            border: const Color(0xFFFECDD3),
+                            onTap: () => _checkoutOccupiedRoom(room),
+                          ),
+                        )
+                      else if (room.status == RoomStatus.cleaning)
+                        Expanded(
+                          child: _roomActionBtn(
+                            label: 'Mark Available',
+                            icon: Icons.check_circle_rounded,
+                            fg: Colors.white,
+                            bg: AppColors.primary,
+                            border: AppColors.primary,
+                            onTap: () => _markCleaningRoomAvailable(room),
+                          ),
+                        )
+                      else
+                        const Spacer(),
+                      const SizedBox(width: 6),
+                      // Same Edit style as Categories card
+                      _roomIconBtn(
+                        icon: Icons.edit_rounded,
+                        bg: const Color(0xFFF0F9FF),
+                        fg: const Color(0xFF0284C7),
+                        border: const Color(0xFFBAE6FD),
+                        onTap: () => _showAddRoomModal(room: room),
+                      ),
+                      const SizedBox(width: 5),
+                      // Same Delete style as Categories card
+                      _roomIconBtn(
+                        icon: Icons.delete_outline_rounded,
+                        bg: const Color(0xFFFFF1F2),
+                        fg: red,
+                        border: const Color(0xFFFECDD3),
+                        onTap: () => _deleteRoom(room),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-            const SizedBox(height: 9),
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (room.status == RoomStatus.occupied)
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () => _checkoutOccupiedRoom(room),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFDC2626), width: 1.1),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.logout_rounded, size: 13, color: Color(0xFFDC2626)),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Checkout',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFFDC2626),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                else if (room.status == RoomStatus.cleaning)
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: () => _markCleaningRoomAvailable(room),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.check_circle_rounded, size: 13, color: Colors.white),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Available',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                if (room.currentGuestName != null && room.currentGuestName!.isNotEmpty) ...[
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0FDF4),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFBBF7D0), width: 0.6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.person_rounded, size: 12, color: Color(0xFF15803D)),
-                          const SizedBox(width: 3),
-                          Flexible(
-                            child: Text(
-                              room.currentGuestName!,
-                              style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w600, color: const Color(0xFF15803D)),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-                const Spacer(),
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => _showAddRoomModal(room: room),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0F9FF),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFBAE6FD), width: 0.8),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        Icons.edit_rounded,
-                        size: 15,
-                        color: Color(0xFF0284C7),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => _deleteRoom(room),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF1F2),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFFECDD3), width: 0.8),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Icon(
-                        Icons.delete_outline_rounded,
-                        size: 15,
-                        color: Color(0xFFDC2626),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
             ),
-          ],
+    );
+  }
+
+  Widget _roomActionBtn({
+    required String label,
+    required IconData icon,
+    required Color fg,
+    required Color bg,
+    required Color border,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: border),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 14, color: fg),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: fg,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _roomIconBtn({
+    required IconData icon,
+    required Color bg,
+    required Color fg,
+    Color? border,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 32,
+          height: 32,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: border ?? const Color(0xFFE2E8F0)),
+          ),
+          child: Icon(icon, size: 15, color: fg),
         ),
       ),
     );

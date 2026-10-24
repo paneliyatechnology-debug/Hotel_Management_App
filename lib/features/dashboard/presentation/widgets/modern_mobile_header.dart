@@ -10,7 +10,6 @@ class ModernMobileHeader extends StatelessWidget {
   final int availableRooms;
   final String? screenTitle;
   final String? screenSubtitle;
-  final VoidCallback? onNotificationTap;
   final VoidCallback? onProfileTap;
   final VoidCallback? onMenuTap;
   final VoidCallback? onRoleTap;
@@ -23,7 +22,6 @@ class ModernMobileHeader extends StatelessWidget {
     this.availableRooms = 0,
     this.screenTitle,
     this.screenSubtitle,
-    this.onNotificationTap,
     this.onProfileTap,
     this.onMenuTap,
     this.onRoleTap,
@@ -228,44 +226,10 @@ class ModernMobileHeader extends StatelessWidget {
               ),
               const SizedBox(width: 8),
 
-              // Actions: Notification + Avatar
+              // Actions: Avatar
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Bell with unread indicator dot
-                  InkWell(
-                    onTap: onNotificationTap,
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: AppColors.background,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          const Icon(Icons.notifications_none_rounded, size: 19, color: AppColors.textSecondary),
-                          Positioned(
-                            top: 7,
-                            right: 8,
-                            child: Container(
-                              width: 7,
-                              height: 7,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEF4444),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white, width: 1.2),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
 
                   // Avatar with Online Status
                   InkWell(

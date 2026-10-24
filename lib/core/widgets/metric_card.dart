@@ -10,18 +10,21 @@ class MetricCard extends StatelessWidget {
   final Color badgeBgColor;
   final IconData icon;
   final String? displayTitle;
+  /// When set, shown instead of [count] (e.g. currency amounts).
+  final String? displayValue;
   final VoidCallback? onTap;
 
   const MetricCard({
     super.key,
     required this.title,
-    required this.count,
+    this.count = 0,
     required this.subtitle,
     required this.tagLabel,
     required this.themeColor,
     required this.badgeBgColor,
     required this.icon,
     this.displayTitle,
+    this.displayValue,
     this.onTap,
   });
 
@@ -29,6 +32,9 @@ class MetricCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final label = displayTitle ?? title;
     final keepsOriginalTitle = label.toUpperCase() == title.toUpperCase();
+    final valueText = (displayValue != null && displayValue!.trim().isNotEmpty)
+        ? displayValue!.trim()
+        : '$count';
 
     return Container(
       decoration: BoxDecoration(
@@ -76,9 +82,11 @@ class MetricCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 1),
                 Text(
-                  '$count',
+                  valueText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.inter(
-                    fontSize: 22,
+                    fontSize: displayValue != null ? 18 : 22,
                     fontWeight: FontWeight.w800,
                     color: const Color(0xFF0F172A),
                     height: 1.05,

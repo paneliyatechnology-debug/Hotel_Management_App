@@ -620,30 +620,37 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
     final totalCount = _staffList.length;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9),
-      appBar: AppBar(
-        title: Text(
-          'Staff Management',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 17, color: const Color(0xFF0F172A)),
-        ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        automaticallyImplyLeading: !widget.embedded,
-        centerTitle: false,
-        iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
-        surfaceTintColor: Colors.white,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: const Color(0xFFE2E8F0)),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded, size: 22),
-            tooltip: 'Refresh',
-            onPressed: _isLoading ? null : _loadStaff,
-          ),
-        ],
-      ),
+      backgroundColor: const Color(0xFFF8FAFC),
+      // Embedded in admin tabs: parent ModernMobileHeader matches More tab.
+      // Standalone route still shows a local AppBar.
+      appBar: widget.embedded
+          ? null
+          : AppBar(
+              title: Text(
+                'Staff Management',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 17,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              backgroundColor: Colors.white,
+              elevation: 0,
+              centerTitle: false,
+              iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
+              surfaceTintColor: Colors.white,
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(1),
+                child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 22),
+                  tooltip: 'Refresh',
+                  onPressed: _isLoading ? null : _loadStaff,
+                ),
+              ],
+            ),
 
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: const Color(0xFF0F766E),
@@ -867,9 +874,21 @@ class _AdminStaffManagementPageState extends State<AdminStaffManagementPage>
           ),
           // Mini stats
           _statChip('$active', 'Active', const Color(0xFF0F766E), const Color(0xFFECFDF5)),
-          const SizedBox(width: 6),
-          if (inactive > 0)
+          if (inactive > 0) ...[
+            const SizedBox(width: 6),
             _statChip('$inactive', 'Off', const Color(0xFF64748B), const Color(0xFFF1F5F9)),
+          ],
+          if (widget.embedded) ...[
+            const SizedBox(width: 4),
+            IconButton(
+              tooltip: 'Refresh',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              icon: const Icon(Icons.refresh_rounded, size: 20, color: Color(0xFF0F766E)),
+              onPressed: _isLoading ? null : _loadStaff,
+            ),
+          ],
         ],
       ),
     );

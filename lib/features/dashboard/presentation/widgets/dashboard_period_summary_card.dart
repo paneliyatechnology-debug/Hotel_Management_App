@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../data/models/dashboard_summary_model.dart';
 import '../../data/repositories/hotel_admin_repository.dart';
+import 'payment_method_collection_cards.dart';
 
 typedef DashboardSummaryLoader = Future<DashboardSummary> Function({
   required DateTime startDate,
@@ -254,23 +255,11 @@ class DashboardPeriodSummaryCardState extends State<DashboardPeriodSummaryCard> 
         _amountRow('Discount', summary.totalDiscountAmount),
         _amountRow('Extra charges', summary.totalExtraChargesAmount),
         _amountRow('Late checkout', summary.totalLateCheckoutChargesAmount),
-        const SizedBox(height: 8),
-        Text(
-          'By payment method',
-          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: const Color(0xFF334155)),
+        const SizedBox(height: 10),
+        PaymentMethodCollectionCards(
+          methods: summary.collectionByPaymentMethod,
+          columns: 2,
         ),
-        const SizedBox(height: 8),
-        _methodRow([
-          _methodTile('Cash', summary.cashCollectedAmount),
-          _methodTile('UPI', summary.upiCollectedAmount),
-          _methodTile('Card', summary.cardCollectedAmount),
-        ]),
-        const SizedBox(height: 8),
-        _methodRow([
-          _methodTile('Online', summary.onlineCollectedAmount),
-          _methodTile('Bank', summary.bankTransferCollectedAmount),
-          const SizedBox.shrink(),
-        ]),
       ],
     );
   }
@@ -319,40 +308,6 @@ class DashboardPeriodSummaryCardState extends State<DashboardPeriodSummaryCard> 
           Text(
             CurrencyFormatter.format(amount),
             style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _methodRow(List<Widget> tiles) {
-    return Row(
-      children: [
-        for (var index = 0; index < tiles.length; index++) ...[
-          if (index > 0) const SizedBox(width: 8),
-          Expanded(child: tiles[index]),
-        ],
-      ],
-    );
-  }
-
-  Widget _methodTile(String label, double amount) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
-          const SizedBox(height: 2),
-          Text(
-            CurrencyFormatter.format(amount),
-            style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
           ),
         ],
       ),

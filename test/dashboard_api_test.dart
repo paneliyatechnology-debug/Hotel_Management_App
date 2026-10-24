@@ -569,6 +569,8 @@ void main() {
             expect(request.headers['content-type'], contains('multipart/form-data'));
             expect(request.body, contains('name="primary_guest_name"'));
             expect(request.body, contains('Niraj Vekariya'));
+            expect(request.body, contains('name="guests"'));
+            expect(request.body, contains('["Niraj Vekariya"]'));
             expect(request.body, contains('name="mobile_number"'));
             expect(request.body, contains('08849218118'));
             expect(request.body, contains('name="email"'));
@@ -2400,13 +2402,32 @@ void main() {
                 'period_start_date': '19-10-2026',
                 'period_end_date': '19-10-2026',
                 'total_collected_amount': 6600,
-                'collection_by_payment_method': {
-                  'cash_collected_amount': 6540,
-                  'online_collected_amount': 0,
-                  'card_collected_amount': 0,
-                  'upi_collected_amount': 60,
-                  'bank_transfer_collected_amount': 0,
-                },
+                'collection_by_payment_method': [
+                  {
+                    'payment_method_id': 5,
+                    'name': 'CASH',
+                    'is_system': true,
+                    'collected_amount': 6540,
+                  },
+                  {
+                    'payment_method_id': 7,
+                    'name': 'UPI',
+                    'is_system': true,
+                    'collected_amount': 60,
+                  },
+                  {
+                    'payment_method_id': 6,
+                    'name': 'CARD',
+                    'is_system': true,
+                    'collected_amount': 0,
+                  },
+                  {
+                    'payment_method_id': 8,
+                    'name': 'BANK_TRANSFER',
+                    'is_system': true,
+                    'collected_amount': 0,
+                  },
+                ],
                 'total_outstanding_amount': 540,
                 'total_booking_count': 2,
                 'total_guest_count': 6,
@@ -2434,8 +2455,10 @@ void main() {
       expect(requestedUri?.query, isNot(contains('hotel_id')));
       expect(body, isEmpty);
       expect(summary.totalCollectedAmount, 6600);
-      expect(summary.cashCollectedAmount, 6540);
-      expect(summary.upiCollectedAmount, 60);
+      expect(summary.collectionByPaymentMethod.length, 4);
+      expect(summary.amountForMethod('CASH'), 6540);
+      expect(summary.amountForMethod('UPI'), 60);
+      expect(summary.collectionByPaymentMethod.first.displayName, 'Cash');
       expect(summary.totalOutstandingAmount, 540);
       expect(summary.totalBookingCount, 2);
       expect(summary.totalGuestCount, 6);

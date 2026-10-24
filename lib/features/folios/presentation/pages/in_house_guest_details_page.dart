@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
-import '../../../../core/widgets/status_badge.dart';
 import '../../../dashboard/data/models/guest_folio_model.dart';
 import '../../../dashboard/presentation/bloc/dashboard_bloc.dart';
 import '../../../dashboard/presentation/bloc/dashboard_state.dart';
@@ -29,189 +28,123 @@ class InHouseGuestDetailsPage extends StatefulWidget {
 class _InHouseGuestDetailsPageState extends State<InHouseGuestDetailsPage> {
   GuestFolioModel? _loadedFolio;
 
+  String _appBarTitle(GuestFolioModel? folio, {String fallback = 'Guest Details'}) {
+    if (folio == null) return fallback;
+    final name = folio.guestName.trim();
+    final rawRoom = folio.assignedRoom.replaceAll(RegExp(r'^(Room\s*#?|#)'), '').trim();
+    final room = rawRoom.isNotEmpty ? 'Room #$rawRoom' : '';
+    if (name.isNotEmpty && room.isNotEmpty) return '$name • $room';
+    if (name.isNotEmpty) return name;
+    if (room.isNotEmpty) return room;
+    return fallback;
+  }
+
+  PreferredSizeWidget _buildAppBar(String title) {
+    return AppBar(
+      elevation: 0,
+      scrolledUnderElevation: 0.5,
+      backgroundColor: Colors.white,
+      foregroundColor: const Color(0xFF0F172A),
+      surfaceTintColor: Colors.white,
+      centerTitle: false,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        tooltip: 'Back',
+        onPressed: widget.onClose ?? () => Navigator.of(context).maybePop(),
+      ),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.inter(
+          fontSize: 17,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF0F172A),
+        ),
+      ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+      ),
+    );
+  }
+
+  Widget _embeddedShell({required PreferredSizeWidget appBar, required Widget body}) {
+    return ColoredBox(
+      color: const Color(0xFFF8FAFC),
+      child: Column(
+        children: [
+          Material(
+            color: Colors.white,
+            child: SafeArea(
+              bottom: false,
+              child: SizedBox(height: kToolbarHeight + 1, child: appBar),
+            ),
+          ),
+          Expanded(child: body),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<DashboardBloc, DashboardState>(
       builder: (context, state) {
         final folioList = state.folios.where((f) => f.id == widget.folioId).toList();
         if (folioList.isEmpty) {
-          return Scaffold(
-            backgroundColor: Colors.white,
-            appBar: widget.isEmbedded
-                ? null
-                : AppBar(
-                    elevation: 0,
-                    backgroundColor: Colors.white,
-                    foregroundColor: AppColors.textPrimary,
-                    title: Text(
-                      'Guest Details',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 16),
-                    ),
-                  ),
-            body: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.person_off_rounded, size: 48, color: Color(0xFF94A3B8)),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Folio Not Found',
-                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'The selected folio was not found or has been removed.',
-                    style: GoogleFonts.inter(color: AppColors.textSecondary),
-                  ),
-                ],
-              ),
+          final emptyBody = Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.person_off_rounded, size: 48, color: Color(0xFF94A3B8)),
+                const SizedBox(height: 12),
+                Text(
+                  'Folio Not Found',
+                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'The selected folio was not found or has been removed.',
+                  style: GoogleFonts.inter(color: AppColors.textSecondary),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
+          );
+
+          if (widget.isEmbedded) {
+            return _embeddedShell(appBar: _buildAppBar('Guest Details'), body: emptyBody);
+          }
+
+          return Scaffold(
+            backgroundColor: const Color(0xFFF8FAFC),
+            appBar: _buildAppBar('Guest Details'),
+            body: emptyBody,
           );
         }
 
         final folio = _loadedFolio ?? folioList.first;
+        final body = GuestFolioDetailsView(
+          folio: folio,
+          isDialog: false,
+          onClose: widget.onClose ?? () => Navigator.of(context).maybePop(),
+          initialTabIndex: widget.initialTabIndex,
+          onFolioLoaded: (loaded) {
+            if (mounted) setState(() => _loadedFolio = loaded);
+          },
+        );
+
+        final appBar = _buildAppBar(_appBarTitle(folio));
 
         if (widget.isEmbedded) {
-          return Container(
-            color: Colors.white,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        'Guest Details',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (widget.onClose != null)
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 20),
-                          onPressed: widget.onClose,
-                        ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: GuestFolioDetailsView(
-                    folio: folio,
-                    isDialog: false,
-                    onClose: widget.onClose,
-                    initialTabIndex: widget.initialTabIndex,
-                    onFolioLoaded: (loaded) {
-                      if (mounted) setState(() => _loadedFolio = loaded);
-                    },
-                  ),
-                ),
-              ],
-            ),
-          );
+          return _embeddedShell(appBar: appBar, body: body);
         }
 
-        final isDeparted = folio.status == FolioStatus.departed;
-        final isPaid = folio.pendingAmount <= 0;
-
-        final rawRoom = folio.assignedRoom.replaceAll(RegExp(r'^(Room\s*#?|#)'), '').trim();
-        final displayRoom = rawRoom.isNotEmpty ? 'Room #$rawRoom' : 'Room #01';
-
         return Scaffold(
-          backgroundColor: Colors.white,
-          appBar: AppBar(
-            elevation: 0.5,
-            backgroundColor: Colors.white,
-            foregroundColor: AppColors.textPrimary,
-            titleSpacing: 0,
-            leading: const BackButton(color: AppColors.textPrimary),
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Guest Details',
-                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                ),
-                Text(
-                  '${folio.guestName} • $displayRoom',
-                  style: GoogleFonts.inter(fontSize: 11.5, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-            actions: [
-              // In-House / Departed Badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                decoration: BoxDecoration(
-                  color: isDeparted ? const Color(0xFFE0F2FE) : const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDeparted ? const Color(0xFFBAE6FD) : const Color(0xFF86EFAC),
-                    width: 0.8,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 5,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isDeparted ? const Color(0xFF0369A1) : const Color(0xFF15803D),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      isDeparted ? 'DEPARTED' : 'IN-HOUSE',
-                      style: GoogleFonts.inter(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w800,
-                        color: isDeparted ? const Color(0xFF0369A1) : const Color(0xFF15803D),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              // Paid / Pending Badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                decoration: BoxDecoration(
-                  color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isPaid ? const Color(0xFF86EFAC) : const Color(0xFFFDE68A),
-                    width: 0.8,
-                  ),
-                ),
-                child: Text(
-                  folio.paymentStatusLabel,
-                  style: GoogleFonts.inter(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    color: isPaid ? const Color(0xFF15803D) : const Color(0xFFB45309),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 14),
-            ],
-          ),
-          body: GuestFolioDetailsView(
-            folio: folio,
-            isDialog: false,
-            initialTabIndex: widget.initialTabIndex,
-            onFolioLoaded: (loaded) {
-              if (mounted) setState(() => _loadedFolio = loaded);
-            },
-          ),
+          backgroundColor: const Color(0xFFF8FAFC),
+          appBar: appBar,
+          body: body,
         );
       },
     );

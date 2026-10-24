@@ -127,9 +127,10 @@ void main() {
     expect(find.text('Create Room Category'), findsOneWidget);
     // Sheet should sit on the bottom and hug its content, not cover the page.
     expect(tester.getTopLeft(find.text('Create Room Category')).dy, greaterThan(500));
-    expect(find.text('CATEGORY DETAILS'), findsOneWidget);
-    expect(find.text('Category Name *'), findsOneWidget);
-    expect(find.text('Description (Optional)'), findsOneWidget);
+    expect(find.text('Category name'), findsOneWidget);
+    expect(find.text('Description'), findsOneWidget);
+    expect(find.text('Optional'), findsOneWidget);
+    expect(find.text('PREVIEW'), findsNothing);
     expect(find.text('Quick select'), findsNothing);
     expect(find.text('Save & Create Category'), findsOneWidget);
 

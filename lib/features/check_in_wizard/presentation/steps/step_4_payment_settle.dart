@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/widgets/custom_text_field.dart';
+import '../../../payments/data/models/payment_method_model.dart';
+import '../../../payments/data/repositories/payment_methods_repository.dart';
 import '../../data/models/check_in_form_data.dart';
 
 class Step4PaymentSettle extends StatefulWidget {
@@ -24,18 +26,15 @@ class _Step4PaymentSettleState extends State<Step4PaymentSettle> {
   late TextEditingController _discountController;
   late TextEditingController _txnRefController;
   late String _selectedPaymentMode;
-
-  final List<Map<String, dynamic>> _paymentModes = [
-    {'label': 'UPI / QR Scan', 'icon': Icons.qr_code_scanner},
-    {'label': 'Credit / Debit Card', 'icon': Icons.credit_card},
-    {'label': 'Cash Desk', 'icon': Icons.payments_outlined},
-    {'label': 'POS Terminal', 'icon': Icons.point_of_sale},
-  ];
+  late Future<List<PaymentMethodModel>> _methodsFuture;
 
   @override
   void initState() {
     super.initState();
-    _selectedPaymentMode = widget.formData.paymentMode;
+    _selectedPaymentMode = widget.formData.paymentMode.trim().isEmpty
+        ? 'UPI'
+        : widget.formData.paymentMode;
+    _methodsFuture = PaymentMethodsRepository().fetchPaymentMethods();
     final initialAdvance = widget.formData.advancePaid > 0
         ? widget.formData.advancePaid
         : widget.formData.grandTotal;
@@ -46,6 +45,40 @@ class _Step4PaymentSettleState extends State<Step4PaymentSettle> {
     if (widget.formData.advancePaid == 0) {
       widget.formData.advancePaid = initialAdvance;
     }
+  }
+
+  IconData _iconFor(String code) {
+    switch (code.toUpperCase()) {
+      case 'CASH':
+        return Icons.payments_outlined;
+      case 'CARD':
+        return Icons.credit_card;
+      case 'UPI':
+        return Icons.qr_code_scanner;
+      case 'BANK_TRANSFER':
+        return Icons.account_balance_outlined;
+      case 'POS':
+        return Icons.point_of_sale;
+      default:
+        return Icons.payment_rounded;
+    }
+  }
+
+  String _resolveSelected(List<PaymentMethodModel> methods) {
+    final codes = methods.map((m) => m.code).toSet();
+    final raw = _selectedPaymentMode.trim().toUpperCase();
+    if (codes.contains(raw)) return raw;
+    if (raw.contains('CASH') && codes.contains('CASH')) return 'CASH';
+    if (raw.contains('UPI') && codes.contains('UPI')) return 'UPI';
+    if ((raw.contains('CARD') || raw.contains('CREDIT') || raw.contains('DEBIT')) &&
+        codes.contains('CARD')) {
+      return 'CARD';
+    }
+    if ((raw.contains('BANK') || raw.contains('NET') || raw.contains('POS')) &&
+        codes.contains('BANK_TRANSFER')) {
+      return 'BANK_TRANSFER';
+    }
+    return methods.isNotEmpty ? methods.first.code : 'UPI';
   }
 
   @override
@@ -132,60 +165,67 @@ class _Step4PaymentSettleState extends State<Step4PaymentSettle> {
         ),
         const SizedBox(height: 8),
 
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: isCompact ? 1 : 2,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: isCompact ? 5.5 : 2.8,
-          ),
-          itemCount: _paymentModes.length,
-          itemBuilder: (context, index) {
-            final mode = _paymentModes[index];
-            final isSelected = _selectedPaymentMode == mode['label'];
+        FutureBuilder<List<PaymentMethodModel>>(
+          future: _methodsFuture,
+          builder: (context, snapshot) {
+            final methods = snapshot.data ?? PaymentMethodModel.fallback;
+            final selected = _resolveSelected(methods);
+            return GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: isCompact ? 1 : 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                childAspectRatio: isCompact ? 5.5 : 2.8,
+              ),
+              itemCount: methods.length,
+              itemBuilder: (context, index) {
+                final mode = methods[index];
+                final isSelected = selected == mode.code;
 
-            return Material(
-              color: isSelected ? AppColors.accentGreenLight : Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              child: InkWell(
-                onTap: () {
-                  setState(() => _selectedPaymentMode = mode['label'] as String);
-                  _notify();
-                },
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
+                return Material(
+                  color: isSelected ? AppColors.accentGreenLight : Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() => _selectedPaymentMode = mode.code);
+                      _notify();
+                    },
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isSelected ? AppColors.accentGreen : AppColors.border,
-                      width: isSelected ? 1.5 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        mode['icon'] as IconData,
-                        size: 18,
-                        color: isSelected ? AppColors.accentGreen : AppColors.textSecondary,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          mode['label'] as String,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                            color: isSelected ? AppColors.accentGreen : AppColors.textPrimary,
-                          ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected ? AppColors.accentGreen : AppColors.border,
+                          width: isSelected ? 1.5 : 1,
                         ),
                       ),
-                    ],
+                      child: Row(
+                        children: [
+                          Icon(
+                            _iconFor(mode.code),
+                            size: 18,
+                            color: isSelected ? AppColors.accentGreen : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              mode.label,
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                color: isSelected ? AppColors.accentGreen : AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             );
           },
         ),

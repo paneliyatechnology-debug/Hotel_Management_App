@@ -19,8 +19,10 @@ void main() {
                 periodStartDate: '19-10-2026',
                 periodEndDate: '19-10-2026',
                 totalCollectedAmount: 6600,
-                cashCollectedAmount: 6540,
-                upiCollectedAmount: 60,
+                collectionByPaymentMethod: [
+                  PaymentMethodCollection(paymentMethodId: 5, name: 'CASH', isSystem: true, collectedAmount: 6540),
+                  PaymentMethodCollection(paymentMethodId: 7, name: 'UPI', isSystem: true, collectedAmount: 60),
+                ],
                 totalOutstandingAmount: 540,
                 totalBookingCount: 2,
                 totalGuestCount: 6,
@@ -45,6 +47,8 @@ void main() {
     expect(find.text('6'), findsOneWidget);
     expect(find.text('Cash'), findsOneWidget);
     expect(find.text('UPI'), findsOneWidget);
+    expect(find.text('₹6,540'), findsOneWidget);
+    expect(find.text('₹60'), findsOneWidget);
     expect(find.text('Yesterday'), findsOneWidget);
     expect(find.text('This year'), findsOneWidget);
     expect(find.text('Custom date'), findsOneWidget);

@@ -95,6 +95,7 @@ class CheckInFormData {
 
   // Step 2: Stay & Room Allocation
   String selectedRoomId;
+  List<String> selectedRoomIds;
   String selectedRoomNumber;
   String selectedFloor;
   String roomType;
@@ -152,6 +153,7 @@ class CheckInFormData {
     this.secondGuestPhone,
     List<AccompanyingGuest>? accompanyingGuests,
     this.selectedRoomId = '',
+    List<String>? selectedRoomIds,
     this.selectedRoomNumber = '',
     String? selectedFloor,
     this.roomType = '',
@@ -193,9 +195,24 @@ class CheckInFormData {
         accompanyingGuests = accompanyingGuests ?? [],
         signaturePoints = signaturePoints ?? [],
         extraSignatures = extraSignatures ?? [],
+        selectedRoomIds = _normalizeRoomIds(
+          selectedRoomIds: selectedRoomIds,
+          selectedRoomId: selectedRoomId,
+        ),
         selectedFloor = selectedFloor ?? 'Floor 1',
         checkInDate = checkInDate ?? DateTime.now(),
         checkOutDate = checkOutDate ?? DateTime.now().add(const Duration(days: 1));
+
+  int get selectedRoomCount => selectedRoomIds.isNotEmpty
+      ? selectedRoomIds.length
+      : (selectedRoomId.trim().isEmpty ? 0 : 1);
+
+  String get roomsLabel {
+    final label = selectedRoomNumber.trim();
+    if (label.isNotEmpty) return label;
+    if (selectedRoomIds.isNotEmpty) return selectedRoomIds.join(', ');
+    return selectedRoomId;
+  }
 
   int get totalNights {
     final diff = checkOutDate.difference(checkInDate).inDays;
@@ -227,6 +244,7 @@ class CheckInFormData {
       secondGuestPhone: secondGuestPhone,
       accompanyingGuests: accompanyingGuests.map((g) => g.copy()).toList(),
       selectedRoomId: selectedRoomId,
+      selectedRoomIds: List<String>.from(selectedRoomIds),
       selectedRoomNumber: selectedRoomNumber,
       selectedFloor: selectedFloor,
       roomType: roomType,
@@ -301,6 +319,7 @@ class CheckInFormData {
       isIdVerified: folio.isGovtIdVerified || photos.isNotEmpty,
       secondGuestName: folio.secondaryGuestName,
       selectedRoomId: apiRoomId.isNotEmpty ? apiRoomId : room.id,
+      selectedRoomIds: [if ((apiRoomId.isNotEmpty ? apiRoomId : room.id).trim().isNotEmpty) (apiRoomId.isNotEmpty ? apiRoomId : room.id)],
       selectedRoomNumber: room.roomNumber,
       selectedFloor: room.floor.isEmpty ? folio.floor : room.floor,
       roomType: room.roomType.isNotEmpty ? room.roomType : folio.roomType,
@@ -336,6 +355,26 @@ class CheckInFormData {
   }
 }
 
+List<String> _normalizeRoomIds({
+  List<String>? selectedRoomIds,
+  required String selectedRoomId,
+}) {
+  final ids = <String>[];
+  void add(String raw) {
+    final id = raw.trim();
+    if (id.isEmpty || ids.contains(id)) return;
+    ids.add(id);
+  }
+
+  if (selectedRoomIds != null) {
+    for (final id in selectedRoomIds) {
+      add(id);
+    }
+  }
+  add(selectedRoomId);
+  return ids;
+}
+
 String _wizardIdType(String raw) {
   final value = raw.toLowerCase();
   if (value.contains('passport')) return 'Passport';
@@ -348,9 +387,10 @@ String _wizardIdType(String raw) {
 
 String _wizardPaymentMode(String raw) {
   final value = raw.toUpperCase();
-  if (value.contains('CASH')) return 'Cash Desk';
-  if (value.contains('CARD') || value.contains('CREDIT') || value.contains('DEBIT')) return 'Credit / Debit Card';
-  if (value.contains('POS')) return 'POS Terminal';
-  if (value.contains('NET') || value.contains('BANK')) return 'Net Banking / NEFT';
-  return 'UPI / QR Code (PhonePe/GPay)';
+  if (value.contains('CASH')) return 'CASH';
+  if (value.contains('CARD') || value.contains('CREDIT') || value.contains('DEBIT')) return 'CARD';
+  if (value.contains('POS')) return 'POS';
+  if (value.contains('NET') || value.contains('BANK')) return 'BANK_TRANSFER';
+    if (value.contains('UPI')) return 'UPI';
+  return 'UPI';
 }

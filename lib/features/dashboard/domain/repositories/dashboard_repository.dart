@@ -12,6 +12,7 @@ import '../../../../core/widgets/status_badge.dart';
 import '../../../rooms/data/models/room_model.dart';
 import '../../data/models/booking_list_query.dart';
 import '../../data/models/booking_pdf_file.dart';
+import '../../data/models/dashboard_summary_model.dart';
 import '../../data/models/guest_folio_model.dart';
 import '../../data/models/hotel_stats_model.dart';
 import '../../data/models/room_live_update.dart';
@@ -724,33 +725,65 @@ class DashboardRepository implements IDashboardRepository {
   }
 
   String _roomIdFormValue(String raw) {
-    final id = int.tryParse(raw.trim());
-    if (id != null) return '[$id]';
-    if (raw.trim().isEmpty) return '[]';
-    return jsonEncode([raw.trim()]);
+    final ids = _roomIdIntsFromRaw(raw);
+    if (ids.isEmpty) return '[]';
+    return '[${ids.join(',')}]';
   }
 
-  /// The bookings API expects room_id as the string `[14]`, using the numeric
-  /// room id rather than the room number.
-  String _bookingRoomId(CheckInFormData formData, String resolvedRoomId) {
-    for (final raw in [formData.selectedRoomId.trim(), resolvedRoomId.trim()]) {
-      final parsed = int.tryParse(raw);
-      if (parsed != null) return '[$parsed]';
+  List<int> _roomIdIntsFromRaw(String raw) {
+    final text = raw.trim();
+    if (text.isEmpty) return const [];
+    if (text.startsWith('[') && text.endsWith(']')) {
+      final inner = text.substring(1, text.length - 1).trim();
+      if (inner.isEmpty) return const [];
+      return inner
+          .split(',')
+          .map((part) => int.tryParse(part.trim()))
+          .whereType<int>()
+          .toList();
     }
-    final wantedNumber = formData.selectedRoomNumber.replaceAll(RegExp(r'[^0-9]'), '');
-    if (wantedNumber.isNotEmpty) {
-      for (final room in _rooms) {
-        final roomNumber = room.roomNumber.replaceAll(RegExp(r'[^0-9]'), '');
-        if (roomNumber == wantedNumber) {
-          final parsed = int.tryParse(room.id);
-          if (parsed != null) return '[$parsed]';
+    final parsed = int.tryParse(text);
+    if (parsed != null) return [parsed];
+    return const [];
+  }
+
+  /// Bookings API expects `room_id` as `[1,47]` (numeric room ids).
+  List<int> _bookingRoomIdInts(CheckInFormData formData, String resolvedRoomId) {
+    final ids = <int>[];
+    void addRaw(String raw) {
+      for (final id in _roomIdIntsFromRaw(raw)) {
+        if (!ids.contains(id)) ids.add(id);
+      }
+    }
+
+    for (final raw in formData.selectedRoomIds) {
+      addRaw(raw);
+    }
+    addRaw(formData.selectedRoomId);
+    addRaw(resolvedRoomId);
+
+    if (ids.isEmpty) {
+      final numbers = formData.selectedRoomNumber
+          .split(RegExp(r'[,+/]| and '))
+          .map((part) => part.replaceAll(RegExp(r'[^0-9]'), '').trim())
+          .where((part) => part.isNotEmpty);
+      for (final wantedNumber in numbers) {
+        for (final room in _rooms) {
+          final roomNumber = room.roomNumber.replaceAll(RegExp(r'[^0-9]'), '');
+          if (roomNumber == wantedNumber) {
+            final parsed = int.tryParse(room.id);
+            if (parsed != null && !ids.contains(parsed)) ids.add(parsed);
+          }
         }
       }
     }
-    final raw = formData.selectedRoomId.trim().isNotEmpty
-        ? formData.selectedRoomId.trim()
-        : resolvedRoomId.trim();
-    return _roomIdFormValue(raw);
+    return ids;
+  }
+
+  String _bookingRoomId(CheckInFormData formData, String resolvedRoomId) {
+    final ids = _bookingRoomIdInts(formData, resolvedRoomId);
+    if (ids.isEmpty) return '[]';
+    return '[${ids.join(',')}]';
   }
 
   MediaType _imageMediaType(String path, List<int> header) {
@@ -1092,6 +1125,24 @@ class DashboardRepository implements IDashboardRepository {
             .map((guest) => guest.name.trim())
             .firstWhere((name) => name.isNotEmpty, orElse: () => '');
 
+    final allGuestNames = <String>[];
+    if (formData.guestFullName.trim().isNotEmpty) {
+      allGuestNames.add(formData.guestFullName.trim());
+    }
+    if ((formData.secondGuestName ?? '').trim().isNotEmpty) {
+      final name = formData.secondGuestName!.trim();
+      if (!allGuestNames.contains(name)) {
+        allGuestNames.add(name);
+      }
+    }
+    for (final guest in formData.accompanyingGuests) {
+      final name = guest.name.trim();
+      if (name.isNotEmpty && !allGuestNames.contains(name)) {
+        allGuestNames.add(name);
+      }
+    }
+    final guestsJson = jsonEncode(allGuestNames);
+
     final roomIdField = _bookingRoomId(formData, targetRoomId);
     final stayNights = _calendarNights(formData.checkInDate, formData.checkOutDate);
     final gstRate = _gstRateForRoom(targetRoomId, formData.selectedRoomId);
@@ -1104,6 +1155,7 @@ class DashboardRepository implements IDashboardRepository {
         request.fields.addAll({
           'primary_guest_name': formData.guestFullName.trim(),
           'secondary_guest_name': secondaryName,
+          'guests': guestsJson,
           'mobile_number': _bookingMobile(formData.contactPhone),
           'email': formData.email.trim(),
           'address': formData.residentialAddress.trim(),
@@ -1279,7 +1331,9 @@ class DashboardRepository implements IDashboardRepository {
       'mobile_number': _bookingMobile(phone),
       'email': email.trim(),
       'address': address.trim(),
-      'room_id': _roomIdFormValue(roomId),
+      'room_id': _roomIdIntsFromRaw(roomId).isNotEmpty
+          ? _roomIdIntsFromRaw(roomId)
+          : _roomIdIntsFromRaw(_roomIdFormValue(roomId)),
       'check_in_date': _bookingTimestamp(checkInDate, defaultHour: 14),
       'check_out_date': _bookingTimestamp(checkOutDate, defaultHour: 12),
       'adults': adults < 1 ? 1 : adults,
@@ -1331,6 +1385,25 @@ class DashboardRepository implements IDashboardRepository {
         : formData.accompanyingGuests
             .map((guest) => guest.name.trim())
             .firstWhere((name) => name.isNotEmpty, orElse: () => '');
+
+    final allGuestNames = <String>[];
+    if (formData.guestFullName.trim().isNotEmpty) {
+      allGuestNames.add(formData.guestFullName.trim());
+    }
+    if ((formData.secondGuestName ?? '').trim().isNotEmpty) {
+      final name = formData.secondGuestName!.trim();
+      if (!allGuestNames.contains(name)) {
+        allGuestNames.add(name);
+      }
+    }
+    for (final guest in formData.accompanyingGuests) {
+      final name = guest.name.trim();
+      if (name.isNotEmpty && !allGuestNames.contains(name)) {
+        allGuestNames.add(name);
+      }
+    }
+    final guestsJson = jsonEncode(allGuestNames);
+
     final stayNights = _calendarNights(formData.checkInDate, formData.checkOutDate);
     final notes = formData.transactionRef.trim().isNotEmpty
         ? formData.transactionRef.trim()
@@ -1343,10 +1416,11 @@ class DashboardRepository implements IDashboardRepository {
     request.fields.addAll({
       'primary_guest_name': formData.guestFullName.trim(),
       'secondary_guest_name': secondaryName,
+      'guests': guestsJson,
       'mobile_number': _bookingMobile(formData.contactPhone),
       'email': formData.email.trim(),
       'address': _joinedAddress(formData),
-      'room_id': _roomIdFormValue(formData.selectedRoomId),
+      'room_id': _bookingRoomId(formData, formData.selectedRoomId),
       'check_in_date': _bookingTimestamp(formData.checkInDate, defaultHour: 14),
       'check_out_date': _bookingTimestamp(formData.checkOutDate, defaultHour: 12),
       'adults': '${adults < 1 ? 1 : adults}',
@@ -1564,6 +1638,43 @@ class DashboardRepository implements IDashboardRepository {
     return '${date.year}-$month-$day';
   }
 
+  /// GET /api/v1/dashboard/summary?start_date=&end_date= — same daily summary as admin.
+  Future<DashboardSummary> fetchDashboardSummary({
+    required DateTime startDate,
+    required DateTime endDate,
+  }) async {
+    if (_shouldSkipLiveNetwork) {
+      return const DashboardSummary();
+    }
+    final uri = Uri.parse(ApiConstants.dashboardSummaryUrl).replace(
+      queryParameters: {
+        'start_date': _reportDate(startDate),
+        'end_date': _reportDate(endDate),
+      },
+    );
+    final response = await _client.get(
+      uri,
+      headers: const {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    );
+    Map<String, dynamic>? json;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) json = decoded;
+      if (decoded is Map) json ??= Map<String, dynamic>.from(decoded);
+    } catch (_) {}
+    if (response.statusCode < 200 || response.statusCode >= 300 || json?['success'] == false) {
+      final message = json?['message']?.toString().trim();
+      throw Exception(message == null || message.isEmpty ? 'Could not load the date summary.' : message);
+    }
+    final data = json?['data'];
+    if (data is Map<String, dynamic>) return DashboardSummary.fromJson(data);
+    if (data is Map) return DashboardSummary.fromJson(Map<String, dynamic>.from(data));
+    throw Exception('Could not load the date summary.');
+  }
+
   /// Live booking bill from GET /api/v1/bookings/{id}. Used to fill checkout fields.
   Future<({
     double roomCharges,
@@ -1582,6 +1693,7 @@ class DashboardRepository implements IDashboardRepository {
     String guestName,
     String phone,
     String bookingNumber,
+    List<String> roomNumbers,
     String? notes,
   })?> fetchBookingSettlement(String bookingId) async {
     if (_shouldSkipLiveNetwork) return null;
@@ -1624,6 +1736,19 @@ class DashboardRepository implements IDashboardRepository {
           ? read(data['due_amount'] ?? data['dueAmount'])
           : (total - paid).clamp(0, double.infinity).toDouble();
       final notes = (data['notes'] ?? '').toString().trim();
+      final roomNumbers = <String>[];
+      final roomsRaw = data['rooms'];
+      if (roomsRaw is List) {
+        for (final item in roomsRaw) {
+          if (item is! Map) continue;
+          final number = (item['room_number'] ?? item['roomNumber'] ?? '').toString().trim();
+          if (number.isEmpty) continue;
+          final cleaned = number.replaceAll('#', '').replaceAll('Room', '').trim();
+          if (cleaned.isNotEmpty && !roomNumbers.contains(cleaned)) {
+            roomNumbers.add(cleaned);
+          }
+        }
+      }
       return (
         roomCharges: roomCharges,
         discount: discount,
@@ -1641,6 +1766,7 @@ class DashboardRepository implements IDashboardRepository {
         guestName: (data['primary_guest_name'] ?? data['primaryGuestName'] ?? '').toString(),
         phone: (data['mobile_number'] ?? data['mobileNumber'] ?? '').toString(),
         bookingNumber: (data['booking_number'] ?? data['bookingNumber'] ?? '').toString(),
+        roomNumbers: roomNumbers,
         notes: notes.isEmpty ? null : notes,
       );
     } catch (e) {

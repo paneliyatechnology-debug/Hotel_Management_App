@@ -230,22 +230,29 @@ class GuestProfileModel {
         roomAssigned != 'N/A') {
       return roomAssigned;
     }
-    if (currentStay != null) return currentStay!.roomNumber;
-    if (stayHistory.isNotEmpty) return stayHistory.first.roomNumber;
-    return roomAssigned.isNotEmpty ? roomAssigned : '101';
+    if (currentStay != null && currentStay!.roomNumber.trim().isNotEmpty) {
+      return currentStay!.roomNumber;
+    }
+    if (stayHistory.isNotEmpty && stayHistory.first.roomNumber.trim().isNotEmpty) {
+      return stayHistory.first.roomNumber;
+    }
+    return '';
   }
 
   String get lastRoomCategory =>
       currentStay?.roomCategory ??
       (stayHistory.isNotEmpty
           ? stayHistory.first.roomCategory
-          : 'Standard Room');
+          : '');
+
+  /// Prefer API `actual_check_in`, then planned check-in, then stay history.
+  DateTime? get actualOrCheckInDate {
+    final stay = currentStay ?? (stayHistory.isNotEmpty ? stayHistory.first : null);
+    return stay?.checkInDate ?? createdAt;
+  }
 
   DateTime get lastCheckInDate =>
-      currentStay?.checkInDate ??
-      (stayHistory.isNotEmpty
-          ? stayHistory.first.checkInDate
-          : createdAt ?? DateTime.now());
+      actualOrCheckInDate ?? DateTime.now();
 
   DateTime get lastCheckOutDate =>
       currentStay?.checkOutDate ??
@@ -354,82 +361,98 @@ class GuestProfileModel {
             ? roomTypeData['name']
             : null) ??
         roomData?['room_type_name'] ??
+        roomData?['roomTypeName'] ??
+        json['room_type_name'] ??
         json['roomCategory'] ??
-        (roomTypeData is String && roomTypeData.isNotEmpty ? roomTypeData : 'Standard Room');
+        (roomTypeData is String && roomTypeData.isNotEmpty ? roomTypeData : '');
 
-    final floorStr = (roomData?['floor'] != null
-        ? 'Floor ${roomData!['floor']}'
-        : (json['floor'] ?? 'Floor 1')).toString();
+    final rawFloor = (roomData?['floor'] ?? json['floor'] ?? '').toString().trim();
+    final floorStr = rawFloor.isEmpty
+        ? ''
+        : (rawFloor.toLowerCase().contains('floor') ? rawFloor : 'Floor $rawFloor');
 
-    // 5. Timestamps & Dates
-    final createdAtRaw = json['createdAt']?.toString();
-    final updatedAtRaw = json['updatedAt']?.toString();
-    final createdAt =
-        createdAtRaw != null ? DateTime.tryParse(createdAtRaw) : null;
-    final updatedAt =
-        updatedAtRaw != null ? DateTime.tryParse(updatedAtRaw) : null;
+    // 5. Timestamps & Dates — prefer actual_check_in / actual_check_out from API
+    final createdAt = _parseDate(
+      json['created_at'] ?? json['createdAt'],
+    );
+    final updatedAt = _parseDate(
+      json['updated_at'] ?? json['updatedAt'],
+    );
 
-    final checkInRaw = json['check_in_date']?.toString() ?? json['checkInDate']?.toString() ?? json['checkInDateRaw']?.toString();
-    final checkOutRaw = json['check_out_date']?.toString() ?? json['checkOutDate']?.toString() ?? json['checkOutDateRaw']?.toString();
-    final actualCheckInRaw = json['actualCheckIn']?.toString();
-    final actualCheckOutRaw = json['actualCheckOut']?.toString();
+    final actualCheckIn = _parseDate(
+      json['actual_check_in'] ?? json['actualCheckIn'],
+    );
+    final actualCheckOut = _parseDate(
+      json['actual_check_out'] ?? json['actualCheckOut'],
+    );
+    final plannedCheckIn = _parseDate(
+      json['check_in_date'] ?? json['checkInDate'] ?? json['checkInDateRaw'],
+    );
+    final plannedCheckOut = _parseDate(
+      json['check_out_date'] ?? json['checkOutDate'] ?? json['checkOutDateRaw'],
+    );
 
-    DateTime checkInDate = (checkInRaw != null
-            ? DateTime.tryParse(checkInRaw)
-            : null) ??
-        (actualCheckInRaw != null
-            ? DateTime.tryParse(actualCheckInRaw)
-            : null) ??
-        createdAt ??
-        DateTime.now();
+    final checkInDate = actualCheckIn ?? plannedCheckIn ?? createdAt ?? DateTime.now();
+    final checkOutDate =
+        actualCheckOut ?? plannedCheckOut ?? checkInDate.add(const Duration(days: 1));
 
-    DateTime checkOutDate = (checkOutRaw != null
-            ? DateTime.tryParse(checkOutRaw)
-            : null) ??
-        (actualCheckOutRaw != null
-            ? DateTime.tryParse(actualCheckOutRaw)
-            : null) ??
-        checkInDate.add(const Duration(days: 1));
+    final bookingNumber = (json['booking_number'] ??
+            json['bookingNumber'] ??
+            json['activeBookingNumber'] ??
+            '')
+        .toString()
+        .trim();
 
-    final bookingNumber = (json['booking_number'] ?? json['bookingNumber'] ?? json['activeBookingNumber'] ?? 'N/A').toString();
-
-    final totalAmount = (json['totalAmount'] as num?)?.toDouble() ??
+    final totalAmount = (json['total_amount'] as num?)?.toDouble() ??
+        (json['totalAmount'] as num?)?.toDouble() ??
+        (json['base_amount'] as num?)?.toDouble() ??
         (json['baseAmount'] as num?)?.toDouble() ??
         0.0;
-    final paidAmount = (json['paidAmount'] as num?)?.toDouble() ?? 0.0;
-    final balanceAmount = (json['dueAmount'] as num?)?.toDouble() ??
+    final paidAmount = (json['paid_amount'] as num?)?.toDouble() ??
+        (json['paidAmount'] as num?)?.toDouble() ??
+        0.0;
+    final balanceAmount = (json['due_amount'] as num?)?.toDouble() ??
+        (json['dueAmount'] as num?)?.toDouble() ??
+        (json['balance_amount'] as num?)?.toDouble() ??
         (json['balanceAmount'] as num?)?.toDouble() ??
         0.0;
-    final advanceAmount =
-        (json['advanceAmount'] as num?)?.toDouble() ?? 0.0;
+    final advanceAmount = (json['advance_amount'] as num?)?.toDouble() ??
+        (json['advanceAmount'] as num?)?.toDouble() ??
+        0.0;
     final paymentStatus =
-        (json['paymentStatus'] ?? 'PENDING').toString().toUpperCase();
+        (json['payment_status'] ?? json['paymentStatus'] ?? 'PENDING')
+            .toString()
+            .toUpperCase();
 
     final accompanyingCount = json['accompanyingGuests'] is List
         ? (json['accompanyingGuests'] as List).length
         : 0;
 
     final hasStayDetails = roomAssigned != 'Not Assigned' ||
-        bookingNumber != 'N/A' ||
+        bookingNumber.isNotEmpty ||
         status != GuestStatus.registered;
+
+    final creatorName = json['creator'] is Map
+        ? (Map<String, dynamic>.from(json['creator'] as Map)['name']?.toString() ?? '')
+        : '';
 
     HistoricalStayModel? stayModel;
     if (hasStayDetails) {
       stayModel = HistoricalStayModel(
-        stayId: 'STAY-${json['_id'] ?? DateTime.now().millisecondsSinceEpoch}',
-        bookingId: bookingNumber != 'N/A' && bookingNumber.isNotEmpty
+        stayId: 'STAY-${json['id'] ?? json['_id'] ?? ''}',
+        bookingId: bookingNumber.isNotEmpty
             ? bookingNumber
-            : 'BK-${(json['_id']?.toString() ?? '100000').substring(0, 6)}',
-        bookingDate: createdAt ?? DateTime.now(),
-        bookingSource: (json['bookingSource'] ?? 'Direct / Walk-In').toString(),
-        bookingStatus: rawStatus.isNotEmpty ? rawStatus : 'Confirmed',
-        roomNumber: roomAssigned != 'Not Assigned' ? roomAssigned : '101',
+            : (json['id'] ?? json['_id'] ?? '').toString(),
+        bookingDate: createdAt ?? checkInDate,
+        bookingSource: (json['booking_source'] ?? json['bookingSource'] ?? '').toString(),
+        bookingStatus: rawStatus.isNotEmpty ? rawStatus : '',
+        roomNumber: roomAssigned != 'Not Assigned' ? roomAssigned : '',
         floor: floorStr,
         roomCategory: roomCategoryName.toString(),
         checkInDate: checkInDate,
-        checkInTime: (json['checkInTime'] ?? '14:00').toString(),
+        checkInTime: (json['check_in_time'] ?? json['checkInTime'] ?? '').toString(),
         checkOutDate: checkOutDate,
-        checkOutTime: (json['checkOutTime'] ?? '12:00').toString(),
+        checkOutTime: (json['check_out_time'] ?? json['checkOutTime'] ?? '').toString(),
         numberOfGuests: (json['guestsCount'] is Map
             ? (((json['guestsCount']['adults'] as num?)?.toInt() ?? 1) +
                 ((json['guestsCount']['children'] as num?)?.toInt() ?? 0))
@@ -438,15 +461,17 @@ class GuestProfileModel {
             ? GuestStatus.checkedOut
             : status,
         roomCharges: totalAmount > 0 ? totalAmount : paidAmount,
-        tax: (json['taxAmount'] as num?)?.toDouble() ?? 0.0,
+        tax: (json['tax_amount'] as num?)?.toDouble() ??
+            (json['taxAmount'] as num?)?.toDouble() ??
+            0.0,
         totalAmount: totalAmount > 0 ? totalAmount : paidAmount,
         paidAmount: paidAmount,
         pendingAmount: balanceAmount,
-        paymentMethod: (json['paymentMethod'] ?? 'UPI').toString(),
+        paymentMethod: (json['payment_method'] ?? json['paymentMethod'] ?? '').toString(),
         paymentStatus: paymentStatus,
-        checkedInBy: 'Front Desk',
-        checkedOutBy: actualCheckOutRaw != null ? 'Front Desk' : null,
-        activityTimestamp: updatedAt ?? createdAt ?? DateTime.now(),
+        checkedInBy: creatorName,
+        checkedOutBy: actualCheckOut != null ? creatorName : null,
+        activityTimestamp: updatedAt ?? createdAt ?? checkInDate,
       );
     }
 
@@ -484,13 +509,15 @@ class GuestProfileModel {
     final state = (guestData?['state'] ?? json['state'] ?? '').toString();
     final guestNationality = (guestData?['nationality'] ?? guestData?['country'] ?? json['nationality'] ?? json['country'] ?? 'Indian').toString();
 
+    final dob = _parseDate(guestData?['date_of_birth'] ?? guestData?['dateOfBirth'] ?? json['date_of_birth'] ?? json['dateOfBirth']);
+
     return GuestProfileModel(
       id: guestId,
-      fullName: fullName,
+      fullName: fullName.isNotEmpty ? fullName : 'Guest',
       mobile: mobile,
       email: email,
       gender: gender,
-      dateOfBirth: DateTime(1995, 1, 1),
+      dateOfBirth: dob ?? DateTime(1970, 1, 1),
       address: address,
       city: city,
       state: state,
@@ -502,7 +529,7 @@ class GuestProfileModel {
       totalLifetimeStays: totalLifetimeStays,
       totalLifetimeSpent: totalSpent,
       rawStatus: rawStatus,
-      roomAssigned: roomAssigned,
+      roomAssigned: roomAssigned == 'Not Assigned' ? '' : roomAssigned,
       activeBookingNumber: bookingNumber,
       paymentStatus: paymentStatus,
       balanceAmount: balanceAmount,
@@ -514,6 +541,14 @@ class GuestProfileModel {
       bookingRecordId: (json['id'] ?? json['_id'] ?? guestId).toString(),
     );
   }
+}
+
+DateTime? _parseDate(Object? value) {
+  if (value == null) return null;
+  if (value is DateTime) return value;
+  final raw = value.toString().trim();
+  if (raw.isEmpty || raw.toLowerCase() == 'null') return null;
+  return DateTime.tryParse(raw);
 }
 
 /// Helper model for parsing the full guests API response

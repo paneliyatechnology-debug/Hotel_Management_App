@@ -270,6 +270,43 @@ void main() {
     expect(tester.widget<TextFormField>(guestName).controller!.text, 'Pooja Vekariya');
   });
 
+  testWidgets('Add More Guest: tap + icon adds another guest field and remove button works', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(createWizardTestApp());
+    await tester.pumpAndSettle();
+
+    // Verify initial "Add More Guest" button with + icon exists
+    final addMoreBtn = find.byKey(const ValueKey('add_more_guest_btn'));
+    expect(addMoreBtn, findsOneWidget);
+    expect(find.text('Add More Guest'), findsOneWidget);
+
+    // Initial state has Main Guest and 1 optional Guest Name
+    expect(find.widgetWithText(TextFormField, 'Enter guest name'), findsNWidgets(2));
+
+    // Tap + icon to add another guest
+    await tester.ensureVisible(addMoreBtn);
+    await tester.tap(addMoreBtn);
+    await tester.pumpAndSettle();
+
+    // Now 3 guest name fields exist (Main Guest, Guest Name, Guest Name #2)
+    expect(find.widgetWithText(TextFormField, 'Enter guest name'), findsNWidgets(3));
+    expect(find.text('Guest Name #2'), findsOneWidget);
+    expect(find.text('Remove'), findsOneWidget);
+
+    // Tap Remove to remove the newly added guest
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    // Back to 2 fields
+    expect(find.widgetWithText(TextFormField, 'Enter guest name'), findsNWidgets(2));
+  });
+
   testWidgets('Check-In Wizard 4-Step Flow with Room Details and Optional Second Guest', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1.0;
@@ -451,10 +488,10 @@ void main() {
     await tester.tap(addProof);
     await tester.pumpAndSettle();
 
-    expect(find.text('Document Scanner'), findsOneWidget);
-    expect(find.text('AI Auto-Crop'), findsOneWidget);
+    expect(find.text('Camera'), findsWidgets);
+    expect(find.text('Take Photo'), findsOneWidget);
     expect(find.text('Select from Gallery'), findsOneWidget);
-    expect(find.text('Multi-Select'), findsOneWidget);
+    expect(find.text('Gallery'), findsWidgets);
     expect(tester.takeException(), isNull);
   });
 

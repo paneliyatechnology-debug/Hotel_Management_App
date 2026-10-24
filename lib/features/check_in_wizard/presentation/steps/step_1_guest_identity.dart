@@ -1,13 +1,9 @@
-import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/custom_text_field.dart';
 import '../../data/models/check_in_form_data.dart';
-import 'package:google_mlkit_document_scanner/google_mlkit_document_scanner.dart';
 import '../widgets/id_capture_card_widget.dart';
 import '../widgets/signature_pad_widget.dart';
 
@@ -33,7 +29,10 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
   late TextEditingController _addressController;
-  late TextEditingController _secondGuestNameController;
+  late List<TextEditingController> _additionalGuestControllers;
+  TextEditingController get _secondGuestNameController =>
+      _additionalGuestControllers.isNotEmpty ? _additionalGuestControllers[0] : _fallbackController;
+  late final TextEditingController _fallbackController = TextEditingController();
   late TextEditingController _secondGuestPhoneController;
   String? _primaryIdPhotoUrl;
   String? _primaryIdBackPhotoUrl;
@@ -56,7 +55,22 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     _phoneController = TextEditingController(text: widget.formData.contactPhone);
     _emailController = TextEditingController(text: widget.formData.email);
     _addressController = TextEditingController(text: widget.formData.residentialAddress);
-    _secondGuestNameController = TextEditingController(text: widget.formData.secondGuestName ?? '');
+    final initialGuestNames = <String>[];
+    if ((widget.formData.secondGuestName ?? '').trim().isNotEmpty) {
+      initialGuestNames.add(widget.formData.secondGuestName!.trim());
+    }
+    for (final guest in widget.formData.accompanyingGuests) {
+      final name = guest.name.trim();
+      if (name.isNotEmpty && !initialGuestNames.contains(name)) {
+        initialGuestNames.add(name);
+      }
+    }
+    if (initialGuestNames.isEmpty) {
+      initialGuestNames.add('');
+    }
+    _additionalGuestControllers = initialGuestNames
+        .map((name) => TextEditingController(text: name))
+        .toList();
     _secondGuestPhoneController = TextEditingController(text: widget.formData.secondGuestPhone ?? '');
     _primaryIdPhotoUrl = widget.formData.idFrontPhotoUrl;
     _primaryIdBackPhotoUrl = widget.formData.idBackPhotoUrl;
@@ -127,7 +141,10 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     _phoneController.dispose();
     _emailController.dispose();
     _addressController.dispose();
-    _secondGuestNameController.dispose();
+    for (final c in _additionalGuestControllers) {
+      c.dispose();
+    }
+    _fallbackController.dispose();
     _secondGuestPhoneController.dispose();
     super.dispose();
   }
@@ -147,6 +164,24 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     updated.secondGuestPhone = _secondGuestPhoneController.text.trim().isNotEmpty
         ? _secondGuestPhoneController.text.trim()
         : null;
+
+    final List<AccompanyingGuest> updatedGuests = [];
+    for (int i = 0; i < _additionalGuestControllers.length; i++) {
+      final name = _additionalGuestControllers[i].text.trim();
+      if (name.isNotEmpty) {
+        if (i < widget.formData.accompanyingGuests.length) {
+          final existing = widget.formData.accompanyingGuests[i].copy();
+          existing.name = name;
+          updatedGuests.add(existing);
+        } else {
+          updatedGuests.add(AccompanyingGuest(name: name));
+        }
+      }
+    }
+    updated.accompanyingGuests = updatedGuests;
+    if (updatedGuests.isNotEmpty && updated.numberOfGuests < updatedGuests.length + 1) {
+      updated.numberOfGuests = updatedGuests.length + 1;
+    }
     updated.idFrontPhotoUrl = _primaryIdPhotoUrl;
     updated.idBackPhotoUrl = _primaryIdBackPhotoUrl;
     updated.idPhotos = List<String>.from(_idPhotos);
@@ -156,6 +191,25 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     updated.extraSignatures = widget.formData.extraSignatures.map((signature) => signature.copy()).toList();
     updated.isSignatureCaptured = widget.formData.isSignatureCaptured;
     widget.onDataChanged(updated);
+  }
+
+  void _addAdditionalGuest() {
+    setState(() {
+      _additionalGuestControllers.add(TextEditingController());
+    });
+    _notify();
+  }
+
+  void _removeAdditionalGuest(int index) {
+    if (index == 0 && _additionalGuestControllers.length == 1) {
+      _additionalGuestControllers[0].clear();
+    } else {
+      setState(() {
+        final removed = _additionalGuestControllers.removeAt(index);
+        removed.dispose();
+      });
+    }
+    _notify();
   }
 
   Future<void> _addExtraSignature() async {
@@ -442,69 +496,18 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
     }
   }
 
-  static const MethodChannel _documentScannerChannel = MethodChannel('my_own_pms/document_scanner');
-
-  Future<({bool camera, bool scanner})> _prepareDocumentScanner() async {
-    if (kIsWeb || !Platform.isAndroid) return (camera: true, scanner: true);
+  Future<void> _pickFromCamera() async {
     try {
-      final raw = await _documentScannerChannel.invokeMethod<dynamic>('prepare');
-      final map = raw is Map ? raw : const {};
-      return (camera: map['camera'] == true, scanner: map['scanner'] == true);
-    } catch (e) {
-      debugPrint('Document scanner prepare skipped: $e');
-      return (camera: true, scanner: true);
-    }
-  }
-
-  /// Opens Google's document scanner (Manual / Auto capture). One reply only, so a
-  /// late download callback cannot crash the app. Falls back to the camera if the
-  /// scanner cannot start.
-  Future<List<String>> _openDocumentScanner({required int pageLimit}) async {
-    if (!kIsWeb && Platform.isAndroid) {
-      final ready = await _prepareDocumentScanner();
-      if (!ready.camera) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Allow camera access to scan the ID.'),
-              backgroundColor: Color(0xFFDC2626),
-            ),
-          );
-        }
-        return const [];
-      }
-      try {
-        final raw = await _documentScannerChannel.invokeMethod<dynamic>('scan', {'pageLimit': pageLimit});
-        final map = raw is Map ? raw : const {};
-        if (map['cancelled'] == true) return const [];
-        if (map['ok'] == true) {
-          final images = map['images'];
-          if (images is List) {
-            return images.map((image) => '$image').where((image) => image.isNotEmpty).toList();
-          }
-          return const [];
-        }
-      } catch (e) {
-        debugPrint('Document scanner failed: $e');
-      }
-    } else {
-      final images = await _scanDocument(pageLimit: pageLimit);
-      if (images != null) return images;
-    }
-    return _capturePlainCameraPhoto();
-  }
-
-  Future<List<String>> _capturePlainCameraPhoto() async {
-    try {
-      final XFile? file = await ImagePicker().pickImage(
+      final picker = ImagePicker();
+      final XFile? photo = await picker.pickImage(
         source: ImageSource.camera,
         preferredCameraDevice: CameraDevice.rear,
-        maxWidth: 1280,
-        maxHeight: 1280,
-        imageQuality: 70,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
       );
-      if (file == null) return const [];
-      return [file.path];
+      if (photo == null) return;
+      _commitSessionPhotos([photo.path]);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -514,366 +517,45 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
           ),
         );
       }
-      return const [];
     }
   }
 
-  Future<List<String>?> _scanDocument({required int pageLimit}) async {
-    for (final mode in const [ScannerMode.full, ScannerMode.base]) {
-      DocumentScanner? scanner;
-      try {
-        scanner = DocumentScanner(
-          options: DocumentScannerOptions(
-            documentFormats: const {DocumentFormat.jpeg},
-            mode: mode,
-            pageLimit: pageLimit,
-            isGalleryImport: true,
-          ),
-        );
-        final DocumentScanningResult result = await scanner.scanDocument();
-        final images = result.images ?? const <String>[];
-        try {
-          await scanner.close();
-        } catch (_) {}
-        return images;
-      } catch (e) {
-        try {
-          await scanner?.close();
-        } catch (_) {}
-        final message = e.toString().toLowerCase();
-        if (message.contains('cancel')) return const [];
-        debugPrint('Document scanner ($mode) unavailable: $e');
-      }
-    }
-    return null;
-  }
-
-  Future<void> _startCameraMultiCapture() async {
-    final List<String> scannedImages = await _openDocumentScanner(pageLimit: 10);
-    if (scannedImages.isNotEmpty) _commitSessionPhotos(scannedImages);
-  }
-
-  Future<void> _startGalleryMultiSelect() async {
-    final picker = ImagePicker();
-    List<XFile> picked = [];
-
+  Future<void> _pickFromGallery() async {
     try {
-      picked = await picker.pickMultiImage(
-        maxWidth: 1280,
-        maxHeight: 1280,
-        imageQuality: 70,
+      final picker = ImagePicker();
+      final List<XFile> picked = await picker.pickMultiImage(
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
       );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not open gallery: $e'),
-            backgroundColor: const Color(0xFFDC2626),
-          ),
-        );
+      if (picked.isNotEmpty) {
+        _commitSessionPhotos(picked.map((f) => f.path).toList());
+        return;
       }
-      return;
-    }
-
-    if (picked.isEmpty || !mounted) return;
-
-    final List<String> sessionPhotos = picked.map((f) => f.path).toList();
-    if (!mounted) return;
-    await _showMultiPhotoReviewModal(sessionPhotos, isCamera: false);
-  }
-
-  Future<void> _showMultiPhotoReviewModal(
-    List<String> sessionPhotos, {
-    required bool isCamera,
-  }) async {
-    if (!mounted) return;
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (modalCtx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFCBD5E1),
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: (isCamera ? const Color(0xFF10B981) : const Color(0xFF3B82F6))
-                                    .withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(
-                                isCamera ? Icons.camera_alt_rounded : Icons.photo_library_rounded,
-                                color: isCamera ? const Color(0xFF059669) : const Color(0xFF2563EB),
-                                size: 18,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              isCamera ? 'Captured ID Photos' : 'Selected ID Photos',
-                              style: GoogleFonts.inter(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w700,
-                                color: const Color(0xFF0F172A),
-                              ),
-                            ),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '${sessionPhotos.length} Total',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: const Color(0xFF334155),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 14),
-
-                    // Preview Thumbnails Carousel
-                    if (sessionPhotos.isEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        alignment: Alignment.center,
-                        child: Text(
-                          'No photos captured yet',
-                          style: GoogleFonts.inter(color: const Color(0xFF94A3B8)),
-                        ),
-                      )
-                    else
-                      SizedBox(
-                        height: 80,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: sessionPhotos.length,
-                          separatorBuilder: (context, index) => const SizedBox(width: 8),
-                          itemBuilder: (ctx, i) {
-                            final path = sessionPhotos[i];
-                            final isReal = isRemoteProofPath(path) || isStoredProofFile(path);
-                            return Container(
-                              width: 110,
-                              height: 80,
-                              decoration: BoxDecoration(
-                                color: Colors.black,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFF10B981)),
-                              ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(7),
-                                child: Stack(
-                                  fit: StackFit.expand,
-                                  children: [
-                                    if (isReal)
-                                      proofImage(path, fit: BoxFit.cover)
-                                    else
-                                      Container(
-                                        color: const Color(0xFF1E293B),
-                                        alignment: Alignment.center,
-                                        child: const Icon(Icons.badge_rounded, color: Colors.white54, size: 24),
-                                      ),
-                                    Container(color: Colors.black26),
-                                    Positioned(
-                                      top: 3,
-                                      left: 4,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black87,
-                                          borderRadius: BorderRadius.circular(3),
-                                        ),
-                                        child: Text(
-                                          '#${i + 1}',
-                                          style: GoogleFonts.inter(
-                                            color: Colors.white,
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      top: 3,
-                                      right: 4,
-                                      child: GestureDetector(
-                                        onTap: () {
-                                          setModalState(() {
-                                            sessionPhotos.removeAt(i);
-                                          });
-                                        },
-                                        child: Container(
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: const BoxDecoration(
-                                            color: Colors.black87,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: const Icon(Icons.close, size: 10, color: Colors.white),
-                                        ),
-                                      ),
-                                    ),
-                                    Positioned(
-                                      bottom: 3,
-                                      left: 4,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF059669),
-                                          borderRadius: BorderRadius.circular(3),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            const Icon(Icons.check_circle_rounded, size: 8, color: Colors.white),
-                                            const SizedBox(width: 2.5),
-                                            Text(
-                                              'ID Proof',
-                                              style: GoogleFonts.inter(
-                                                color: Colors.white,
-                                                fontSize: 7.5,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-
-                    const SizedBox(height: 16),
-
-                    // Action buttons: "Capture Next / Pick More" and "Done"
-                    Row(
-                      children: [
-                        if (isCamera)
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                final List<String> more = await _openDocumentScanner(pageLimit: 5);
-                                if (more.isEmpty) return;
-                                setModalState(() {
-                                  for (final m in more) {
-                                    if (!sessionPhotos.contains(m)) {
-                                      sessionPhotos.add(m);
-                                    }
-                                  }
-                                });
-                              },
-                              icon: const Icon(Icons.camera_alt_rounded, size: 16),
-                              label: Text(
-                                'Capture Next',
-                                style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 11),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                              ),
-                            ),
-                          )
-                        else
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                final picker = ImagePicker();
-                                try {
-                                  final List<XFile> more = await picker.pickMultiImage(
-                                    maxWidth: 1280,
-                                    maxHeight: 1280,
-                                    imageQuality: 70,
-                                  );
-                                  if (more.isNotEmpty) {
-                                    setModalState(() {
-                                      for (final m in more) {
-                                        if (!sessionPhotos.contains(m.path)) {
-                                          sessionPhotos.add(m.path);
-                                        }
-                                      }
-                                    });
-                                  }
-                                } catch (_) {}
-                              },
-                              icon: const Icon(Icons.photo_library_rounded, size: 16),
-                              label: Text(
-                                'Pick More',
-                                style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 11),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                              ),
-                            ),
-                          ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            onPressed: sessionPhotos.isEmpty
-                                ? null
-                                : () {
-                                    Navigator.pop(modalCtx);
-                                    _commitSessionPhotos(sessionPhotos);
-                                  },
-                            icon: const Icon(Icons.check_rounded, size: 16),
-                            label: Text(
-                              'Done (${sessionPhotos.length})',
-                              style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 12),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 11),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-                              elevation: 0,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
+    } catch (_) {
+      try {
+        final picker = ImagePicker();
+        final XFile? file = await picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1920,
+          maxHeight: 1920,
+          imageQuality: 85,
         );
-      },
-    );
+        if (file != null) {
+          _commitSessionPhotos([file.path]);
+          return;
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Could not open gallery: $e'),
+              backgroundColor: const Color(0xFFDC2626),
+            ),
+          );
+        }
+      }
+    }
   }
 
   void _showAddProofSourceBottomSheet(BuildContext context) {
@@ -942,7 +624,7 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Add the front and back. At least 2 photos are required.',
+                                'Take a photo or choose from gallery',
                                 style: GoogleFonts.inter(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w500,
@@ -957,17 +639,17 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                     ),
                     const SizedBox(height: 16),
                     _buildProofSourceCard(
-                      icon: Icons.document_scanner_rounded,
+                      icon: Icons.camera_alt_rounded,
                       iconColor: const Color(0xFF0F766E),
                       iconBackground: const Color(0xFFE6F7F2),
-                      title: 'Document Scanner',
-                      badge: 'AI Auto-Crop',
+                      title: 'Camera',
+                      badge: 'Take Photo',
                       badgeColor: const Color(0xFF0F766E),
                       badgeBackground: const Color(0xFFECFDF5),
-                      description: 'Finds the ID corners, crops the page, and removes the background.',
+                      description: 'Take a clear photo of the ID using device camera.',
                       onTap: () {
                         Navigator.pop(ctx);
-                        _startCameraMultiCapture();
+                        _pickFromCamera();
                       },
                     ),
                     const SizedBox(height: 10),
@@ -976,13 +658,13 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
                       iconColor: const Color(0xFF1D4ED8),
                       iconBackground: const Color(0xFFEFF6FF),
                       title: 'Select from Gallery',
-                      badge: 'Multi-Select',
+                      badge: 'Gallery',
                       badgeColor: const Color(0xFF1D4ED8),
                       badgeBackground: const Color(0xFFEFF6FF),
-                      description: 'Choose several ID photos at once, then tap Done.',
+                      description: 'Choose ID photos directly from your photo gallery.',
                       onTap: () {
                         Navigator.pop(ctx);
-                        _startGalleryMultiSelect();
+                        _pickFromGallery();
                       },
                     ),
                   ],
@@ -1290,6 +972,49 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
               elevation: 0,
             ),
           ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              InkWell(
+                onTap: _pickFromCamera,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.camera_alt_outlined, size: 14, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Camera',
+                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.primary),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Container(width: 1, height: 12, color: const Color(0xFFCBD5E1), margin: const EdgeInsets.symmetric(horizontal: 6)),
+              InkWell(
+                onTap: _pickFromGallery,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.photo_library_outlined, size: 14, color: AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Gallery',
+                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.primary),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -1520,18 +1245,102 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
 
               const SizedBox(height: 10),
 
-              // 2. Guest Name (Optional)
-              CustomTextField(
-                label: 'Guest Name',
-                hintText: 'Enter guest name',
-                controller: _secondGuestNameController,
-                textCapitalization: TextCapitalization.words,
-                prefixIcon: Icons.person_outline_rounded,
-                onChanged: (_) {
-                  _notify();
-                  setState(() {});
-                },
-              ),
+              // 2. Additional Guest(s) with "+ Add More Guest" icon
+              for (int i = 0; i < _additionalGuestControllers.length; i++) ...[
+                if (i > 0) const SizedBox(height: 10),
+                CustomTextField(
+                  label: i == 0 ? 'Guest Name' : 'Guest Name #${i + 1}',
+                  labelWidget: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _fieldLabel(i == 0 ? 'Guest Name' : 'Guest Name #${i + 1}'),
+                      if (i == 0)
+                        InkWell(
+                          key: const ValueKey('add_more_guest_btn'),
+                          onTap: _addAdditionalGuest,
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.add_circle_rounded, size: 16, color: Color(0xFF0F766E)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Add More Guest',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: const Color(0xFF0F766E),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      else
+                        InkWell(
+                          onTap: () => _removeAdditionalGuest(i),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.remove_circle_outline_rounded, size: 15, color: Color(0xFFDC2626)),
+                                const SizedBox(width: 3),
+                                Text(
+                                  'Remove',
+                                  style: GoogleFonts.inter(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: const Color(0xFFDC2626),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  hintText: 'Enter guest name',
+                  controller: _additionalGuestControllers[i],
+                  textCapitalization: TextCapitalization.words,
+                  prefixIcon: Icons.person_outline_rounded,
+                  onChanged: (_) {
+                    _notify();
+                    setState(() {});
+                  },
+                ),
+              ],
+              if (_additionalGuestControllers.length > 1) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: InkWell(
+                    onTap: _addAdditionalGuest,
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.add_circle_outline_rounded, size: 15, color: Color(0xFF0F766E)),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Add Another Guest',
+                            style: GoogleFonts.inter(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F766E),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 10),
 

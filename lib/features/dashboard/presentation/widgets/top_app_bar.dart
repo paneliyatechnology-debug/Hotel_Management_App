@@ -106,49 +106,6 @@ class TopAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
                 const SizedBox(width: 8),
 
-                // Notification Bell with badge
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: AppColors.background,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: const Icon(
-                        Icons.notifications_none_outlined,
-                        size: 15,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    Positioned(
-                      top: -2,
-                      right: -2,
-                      child: Container(
-                        padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints: const BoxConstraints(minWidth: 12, minHeight: 12),
-                        child: Text(
-                          '0',
-                          style: GoogleFonts.inter(
-                            fontSize: 8,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 8),
-
                 // Settings Gear
                 Container(
                   width: 30,

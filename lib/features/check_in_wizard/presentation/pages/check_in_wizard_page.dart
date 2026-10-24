@@ -53,7 +53,10 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
         break;
 
       case 1:
-        if (state.formData.selectedRoomNumber.isEmpty ||
+        final hasRooms = state.formData.selectedRoomIds.isNotEmpty ||
+            state.formData.selectedRoomId.trim().isNotEmpty ||
+            state.formData.selectedRoomNumber.trim().isNotEmpty;
+        if (!hasRooms ||
             state.formData.checkOutDate.isBefore(state.formData.checkInDate) ||
             state.formData.checkOutDate.isAtSameMomentAs(state.formData.checkInDate)) {
           isValid = false;
@@ -603,7 +606,7 @@ class _CheckInWizardPageState extends State<CheckInWizardPage> {
                         children: [
                           Flexible(
                             child: Text(
-                              'ROOM ${state.formData.selectedRoomNumber} • ${(state.formData.selectedFloor.isNotEmpty ? state.formData.selectedFloor : "Floor 1").toUpperCase()}',
+                              '${state.formData.selectedRoomCount > 1 ? 'ROOMS' : 'ROOM'} ${state.formData.selectedRoomNumber} • ${(state.formData.selectedFloor.isNotEmpty ? state.formData.selectedFloor : "Floor 1").toUpperCase()}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.inter(

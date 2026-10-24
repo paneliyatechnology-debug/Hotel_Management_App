@@ -414,20 +414,6 @@ class _RecentCheckInOutSectionState extends State<RecentCheckInOutSection> {
                         ),
                       ),
                     ),
-                    if (folio.keycardNumber != null && folio.keycardNumber!.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      const Icon(Icons.vpn_key_outlined, size: 11, color: Color(0xFF64748B)),
-                      const SizedBox(width: 3),
-                      Text(
-                        folio.keycardNumber!,
-                        maxLines: 1,
-                        style: GoogleFonts.inter(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF475569),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ],

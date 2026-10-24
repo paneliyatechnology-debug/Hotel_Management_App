@@ -357,36 +357,60 @@ void main() {
   });
 
   group('Hotel Admin UI Screens Tests', () {
-    testWidgets('AdminDailyCollectionsPage renders telemetry cards & handover button',
+    testWidgets('AdminDailyCollectionsPage renders dashboard summary sections',
         (WidgetTester tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
 
       final mockClient = MockClient((request) async {
+        expect(request.url.path, contains('/dashboard/summary'));
         return http.Response(
           jsonEncode({
             'success': true,
             'data': {
-              'telemetry': {
-                'todayGross': 1000,
-                'todayCash': 1000,
-                'todayUpi': 0,
-                'cashInDrawer': 1000,
-                'totalVaultSettled': 74570,
-                'unsettledCount': 1,
-              },
-              'transactions': []
+              'period_start_date': '2026-10-24',
+              'period_end_date': '2026-10-24',
+              'total_collected_amount': 48500,
+              'total_outstanding_amount': 3200,
+              'total_booking_count': 12,
+              'total_guest_count': 18,
+              'total_booking_amount': 52000,
+              'total_discount_amount': 2000,
+              'total_extra_charges_amount': 800,
+              'total_late_checkout_charges_amount': 500,
+              'collection_by_payment_method': [
+                {
+                  'payment_method_id': 5,
+                  'name': 'CASH',
+                  'is_system': true,
+                  'collected_amount': 18500,
+                },
+                {
+                  'payment_method_id': 7,
+                  'name': 'UPI',
+                  'is_system': true,
+                  'collected_amount': 22000,
+                },
+                {
+                  'payment_method_id': 6,
+                  'name': 'CARD',
+                  'is_system': true,
+                  'collected_amount': 6000,
+                },
+                {
+                  'payment_method_id': 8,
+                  'name': 'BANK_TRANSFER',
+                  'is_system': true,
+                  'collected_amount': 0,
+                },
+              ],
             }
           }),
           200,
           headers: {'content-type': 'application/json'},
         );
       });
-
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
 
       final repo = HotelAdminRepository(client: mockClient);
 
@@ -397,11 +421,12 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Daily Collections & Handover'), findsOneWidget);
-      expect(find.text('Front Desk Cash Drawer'), findsOneWidget);
-      expect(find.text('Handover Cash to Vault'), findsOneWidget);
-      expect(find.text('Total Historical Vault Settled'), findsOneWidget);
-      expect(find.text('Recent Receipts Log'), findsOneWidget);
+      expect(find.text('Daily Collections'), findsOneWidget);
+      expect(find.text('TOTAL COLLECTED'), findsOneWidget);
+      expect(find.text('Payment Breakdown'), findsOneWidget);
+      expect(find.text('Billing Summary'), findsOneWidget);
+      expect(find.text('Bookings'), findsOneWidget);
+      expect(find.text('Guests'), findsOneWidget);
     });
 
     testWidgets('AdminStaffManagementPage renders staff directory & add staff button',

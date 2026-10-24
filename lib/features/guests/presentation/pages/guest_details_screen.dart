@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/status_badge.dart';
 import '../../../dashboard/data/models/guest_folio_model.dart';
 import '../../../folios/presentation/widgets/guest_folio_details_view.dart';
@@ -18,134 +17,74 @@ class GuestDetailsScreen extends StatelessWidget {
 
   GuestFolioModel get _folio => guest.toFolio();
 
+  String _appBarTitle(GuestFolioModel folio) {
+    final name = folio.guestName.trim();
+    final rawRoom = folio.assignedRoom.replaceAll(RegExp(r'^(Room\s*#?|#)'), '').trim();
+    final room = rawRoom.isNotEmpty ? 'Room #$rawRoom' : '';
+    if (name.isNotEmpty && room.isNotEmpty) return '$name • $room';
+    if (name.isNotEmpty) return name;
+    if (room.isNotEmpty) return room;
+    return 'Guest Details';
+  }
+
+  PreferredSizeWidget _buildAppBar(BuildContext context, String title) {
+    return AppBar(
+      elevation: 0,
+      scrolledUnderElevation: 0.5,
+      backgroundColor: Colors.white,
+      foregroundColor: const Color(0xFF0F172A),
+      surfaceTintColor: Colors.white,
+      centerTitle: false,
+      leading: const BackButton(color: Color(0xFF0F172A)),
+      title: Text(
+        title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: GoogleFonts.inter(
+          fontSize: 17,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF0F172A),
+        ),
+      ),
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(height: 1, color: const Color(0xFFE2E8F0)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final folio = _folio;
-    final isDeparted = folio.status == FolioStatus.departed || folio.status == FolioStatus.cancelled;
-    final isPaid = folio.pendingAmount <= 0;
-    final statusLabel = switch (folio.status) {
-      FolioStatus.inHouse => 'IN-HOUSE',
-      FolioStatus.departed => 'DEPARTED',
-      FolioStatus.cancelled => 'CANCELLED',
-      FolioStatus.confirmed => 'REGISTERED',
-    };
-    final rawRoom = folio.assignedRoom.replaceAll(RegExp(r'^(Room\s*#?|#)'), '').trim();
-    final displayRoom = rawRoom.isNotEmpty ? 'Room #$rawRoom' : 'Room';
+    final body = GuestFolioDetailsView(
+      folio: folio,
+      isDialog: false,
+      onClose: () => Navigator.of(context).maybePop(),
+    );
+    final appBar = _buildAppBar(context, _appBarTitle(folio));
 
     if (isEmbedded) {
-      return Container(
-        color: Colors.white,
+      return ColoredBox(
+        color: const Color(0xFFF8FAFC),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
-              ),
-              child: Text(
-                'Guest Details',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                ),
+            Material(
+              color: Colors.white,
+              child: SafeArea(
+                bottom: false,
+                child: SizedBox(height: kToolbarHeight + 1, child: appBar),
               ),
             ),
-            Expanded(
-              child: GuestFolioDetailsView(
-                folio: folio,
-                isDialog: false,
-              ),
-            ),
+            Expanded(child: body),
           ],
         ),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        elevation: 0.5,
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.textPrimary,
-        titleSpacing: 0,
-        leading: const BackButton(color: AppColors.textPrimary),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Guest Details',
-              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-            ),
-            Text(
-              '${folio.guestName} • $displayRoom',
-              style: GoogleFonts.inter(fontSize: 11.5, color: AppColors.textSecondary),
-            ),
-          ],
-        ),
-        actions: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-            decoration: BoxDecoration(
-              color: isDeparted ? const Color(0xFFE0F2FE) : const Color(0xFFDCFCE7),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isDeparted ? const Color(0xFFBAE6FD) : const Color(0xFF86EFAC),
-                width: 0.8,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 5,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isDeparted ? const Color(0xFF0369A1) : const Color(0xFF15803D),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  statusLabel,
-                  style: GoogleFonts.inter(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    color: isDeparted ? const Color(0xFF0369A1) : const Color(0xFF15803D),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-            decoration: BoxDecoration(
-              color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isPaid ? const Color(0xFF86EFAC) : const Color(0xFFFDE68A),
-                width: 0.8,
-              ),
-            ),
-            child: Text(
-              folio.paymentStatusLabel,
-              style: GoogleFonts.inter(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w800,
-                color: isPaid ? const Color(0xFF15803D) : const Color(0xFFB45309),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-        ],
-      ),
-      body: GuestFolioDetailsView(
-        folio: folio,
-        isDialog: false,
-      ),
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: appBar,
+      body: body,
     );
   }
 }

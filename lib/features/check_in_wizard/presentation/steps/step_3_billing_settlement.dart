@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/utils/currency_formatter.dart';
+import '../../../payments/presentation/widgets/payment_method_dropdown.dart';
 import '../../data/models/check_in_form_data.dart';
 
 class Step3BillingSettlement extends StatefulWidget {
@@ -24,14 +25,6 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
   late TextEditingController _txnNoteController;
   late String _selectedPaymentMethod;
   bool _userEditedAdvance = false;
-
-  final List<String> _paymentMethods = [
-    'UPI / QR Code (PhonePe/GPay)',
-    'Cash Desk',
-    'Credit / Debit Card',
-    'POS Terminal',
-    'Net Banking / NEFT',
-  ];
 
   @override
   void initState() {
@@ -61,11 +54,9 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
     _txnNoteController =
         TextEditingController(text: widget.formData.transactionRef);
 
-    if (_paymentMethods.contains(widget.formData.paymentMode)) {
-      _selectedPaymentMethod = widget.formData.paymentMode;
-    } else {
-      _selectedPaymentMethod = _paymentMethods.first;
-    }
+    _selectedPaymentMethod = widget.formData.paymentMode.trim().isEmpty
+        ? 'UPI'
+        : widget.formData.paymentMode;
   }
 
   @override
@@ -197,7 +188,7 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
                     ),
                     const SizedBox(height: 1.5),
                     Text(
-                      'Room #$roomNum • $_nights night(s) stay',
+                      'Room${widget.formData.selectedRoomCount > 1 ? 's' : ''} #$roomNum • $_nights night(s) stay',
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         fontWeight: FontWeight.w500,
@@ -483,33 +474,18 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
         filled: true,
         fillColor: Colors.white,
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedPaymentMethod,
-          isExpanded: true,
-          icon: const Icon(Icons.arrow_drop_down_rounded,
-              color: Color(0xFF0F766E), size: 24),
-          style: GoogleFonts.inter(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF0F172A),
-          ),
-          items: _paymentMethods.map((method) {
-            return DropdownMenuItem<String>(
-              value: method,
-              child: Text(
-                method,
-                overflow: TextOverflow.ellipsis,
-              ),
-            );
-          }).toList(),
-          onChanged: (val) {
-            if (val != null) {
-              setState(() => _selectedPaymentMethod = val);
-              _notify();
-            }
-          },
+      child: PaymentMethodDropdown(
+        value: _selectedPaymentMethod,
+        hideUnderline: true,
+        style: GoogleFonts.inter(
+          fontSize: 12.5,
+          fontWeight: FontWeight.w600,
+          color: const Color(0xFF0F172A),
         ),
+        onChanged: (val) {
+          setState(() => _selectedPaymentMethod = val);
+          _notify();
+        },
       ),
     );
   }

@@ -5,8 +5,13 @@ abstract class CheckInEvent {}
 
 class InitCheckInWizardEvent extends CheckInEvent {
   final RoomModel? preselectedRoom;
+  final List<RoomModel>? preselectedRooms;
   final CheckInFormData? existingForm;
-  InitCheckInWizardEvent({this.preselectedRoom, this.existingForm});
+  InitCheckInWizardEvent({
+    this.preselectedRoom,
+    this.preselectedRooms,
+    this.existingForm,
+  });
 }
 
 class NextStepEvent extends CheckInEvent {}

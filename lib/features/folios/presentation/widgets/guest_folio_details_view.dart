@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/currency_formatter.dart';
 import '../../../../core/utils/date_formatter.dart';
 import '../../../../core/widgets/status_badge.dart';
@@ -189,331 +189,261 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
     }
   }
 
+
   @override
   Widget build(BuildContext context) {
     final folio = _folio;
     final isDeparted = folio.status == FolioStatus.departed;
-    final isPaid = folio.pendingAmount <= 0;
+    final statusLabel = switch (folio.status) {
+      FolioStatus.inHouse => 'IN-HOUSE',
+      FolioStatus.departed => 'DEPARTED',
+      FolioStatus.cancelled => 'CANCELLED',
+      FolioStatus.confirmed => 'REGISTERED',
+    };
+    final totalBill = folio.totalAmount;
+    final paid = folio.paidAmount > 0 ? folio.paidAmount : folio.advancePaid;
+    final balance = folio.pendingAmount;
+    final imageCount = folio.idImageUrls.length + folio.signatureUrls.length;
+    final paymentCount = folio.payments.isNotEmpty ? folio.payments.length : (paid > 0 ? 1 : 0);
+    final roomLine = _roomLine(folio);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < 750;
-
-        return Column(
-          mainAxisSize: MainAxisSize.max,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_loadingBooking) const LinearProgressIndicator(minHeight: 2, color: Color(0xFF0F766E)),
-            // 1. TOP HEADER (Avatar, Name, Status, Paid pill, Booking ID)
-            Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: widget.isDialog ? 16 : 18,
-                vertical: widget.isDialog ? 14 : 16,
-              ),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                border: Border(
-                  bottom: BorderSide(color: Color(0xFFF1F5F9), width: 1),
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+    return ColoredBox(
+      color: const Color(0xFFF8FAFC),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_loadingBooking) const LinearProgressIndicator(minHeight: 2, color: Color(0xFF0F766E)),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Avatar
+                  // Guest header card
                   Container(
-                    width: widget.isDialog ? 44 : 48,
-                    height: widget.isDialog ? 44 : 48,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF0F766E),
-                      shape: BoxShape.circle,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: const [
+                        BoxShadow(color: Color(0x080F172A), blurRadius: 10, offset: Offset(0, 3)),
+                      ],
                     ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      folio.guestName.isNotEmpty ? folio.guestName[0].toUpperCase() : 'G',
-                      style: GoogleFonts.inter(
-                        fontSize: widget.isDialog ? 18 : 20,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-
-                  // Guest info & badges
-                  Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              folio.guestName,
-                              style: GoogleFonts.inter(
-                                fontSize: widget.isDialog ? 16 : 17,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.textPrimary,
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: 56,
+                                    height: 56,
+                                    alignment: Alignment.center,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF0F766E),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      folio.guestName.isNotEmpty ? folio.guestName[0].toUpperCase() : 'G',
+                                      style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 6,
+                                          crossAxisAlignment: WrapCrossAlignment.center,
+                                          children: [
+                                            Text(
+                                              folio.guestName,
+                                              style: GoogleFonts.inter(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.w800,
+                                                color: const Color(0xFF0F172A),
+                                              ),
+                                            ),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: isDeparted ? const Color(0xFFE0F2FE) : const Color(0xFFDCFCE7),
+                                                borderRadius: BorderRadius.circular(20),
+                                              ),
+                                              child: Text(
+                                                statusLabel,
+                                                style: GoogleFonts.inter(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: isDeparted ? const Color(0xFF0369A1) : const Color(0xFF15803D),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        _metaIconRow(Icons.phone_rounded, folio.phone.isNotEmpty ? folio.phone : '—'),
+                                        const SizedBox(height: 4),
+                                        _metaIconRow(Icons.email_outlined, folio.email.isNotEmpty ? folio.email : '—'),
+                                        const SizedBox(height: 4),
+                                        _metaIconRow(Icons.bed_rounded, roomLine),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                            // In-House / Departed Badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: isDeparted ? const Color(0xFFE0F2FE) : const Color(0xFFDCFCE7),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isDeparted ? const Color(0xFFBAE6FD) : const Color(0xFF86EFAC),
-                                  width: 0.8,
+                              const SizedBox(height: 14),
+                              Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(child: _moneyStat('Total Bill', CurrencyFormatter.format(totalBill), const Color(0xFF0F172A))),
+                                    Container(width: 1, height: 36, color: const Color(0xFFE2E8F0)),
+                                    Expanded(child: _moneyStat('Paid', CurrencyFormatter.format(paid), const Color(0xFF16A34A))),
+                                    Container(width: 1, height: 36, color: const Color(0xFFE2E8F0)),
+                                    Expanded(
+                                      child: _moneyStat(
+                                        'Balance Due',
+                                        CurrencyFormatter.format(balance),
+                                        balance > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              child: Text(
-                                isDeparted ? 'DEPARTED' : 'IN-HOUSE',
-                                style: GoogleFonts.inter(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: isDeparted ? const Color(0xFF0369A1) : const Color(0xFF15803D),
-                                ),
-                              ),
-                            ),
-                            // Paid / Pending Badge
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: isPaid ? const Color(0xFFDCFCE7) : const Color(0xFFFEF3C7),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: isPaid ? const Color(0xFF86EFAC) : const Color(0xFFFDE68A),
-                                  width: 0.8,
-                                ),
-                              ),
-                              child: Text(
-                                folio.paymentStatusLabel,
-                                style: GoogleFonts.inter(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: isPaid ? const Color(0xFF15803D) : const Color(0xFFB45309),
-                                ),
-                              ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 3),
-                        Builder(builder: (_) {
-                          final rawRoom = folio.assignedRoom.replaceAll('Room', '').replaceAll('#', '').trim();
-                          final displayRoom = rawRoom.isNotEmpty ? '#$rawRoom' : 'N/A';
-                          return Text(
-                            'Booking #${folio.effectiveBookingId} • Room $displayRoom',
-                            style: GoogleFonts.inter(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w500,
-                              color: AppColors.textSecondary,
-                            ),
-                          );
-                        }),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 12),
 
-                  // Optional Dialog Close Button
-                  if (widget.isDialog && widget.onClose != null)
-                    IconButton(
-                      onPressed: widget.onClose,
-                      icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
-                      splashRadius: 20,
+                  // All tabs visible — no horizontal scroll
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE6FFFA),
+                      borderRadius: BorderRadius.circular(12),
                     ),
+                    child: Row(
+                      children: [
+                        Expanded(child: _buildTabButton(0, Icons.bed_rounded, 'Stay')),
+                        Expanded(child: _buildTabButton(1, Icons.image_outlined, 'Images ($imageCount)')),
+                        Expanded(child: _buildTabButton(2, Icons.receipt_long_rounded, 'Billing')),
+                        Expanded(child: _buildTabButton(3, Icons.account_balance_wallet_outlined, 'Ledger ($paymentCount)')),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildCurrentTabContent(folio, true),
                 ],
               ),
             ),
+          ),
 
-            // 2. TAB SELECTOR BAR (No horizontal scrolling on mobile, all tabs visible)
-            Container(
+          // Bottom — PDF + WhatsApp only (same as before)
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+            decoration: const BoxDecoration(
               color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-              child: Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE6FFFA),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildTabButton(
-                        0,
-                        Icons.person_outline_rounded,
-                        isMobile ? 'Profile' : 'Guest Profile & KYC',
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _buildTabButton(
-                        1,
-                        Icons.meeting_room_outlined,
-                        isMobile ? 'Rooms' : 'Booking & Rooms',
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _buildTabButton(
-                        2,
-                        Icons.credit_card_rounded,
-                        isMobile ? 'Billing' : 'Billing & Payments',
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: _buildTabButton(
-                        3,
-                        Icons.timeline_rounded,
-                        isMobile ? 'Timeline' : 'Activity Timeline',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
             ),
-
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
-
-            // 3. TAB CONTENT BODY (Scrolls cleanly within remaining space)
-            Expanded(
-              flex: 1,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.all(widget.isDialog ? 14 : 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildCurrentTabContent(folio, isMobile),
-                    const SizedBox(height: 16),
-                  ],
-                ),
-              ),
-            ),
-
-            const Divider(height: 1, color: Color(0xFFF1F5F9)),
-
-            // 4. FOOTER ACTIONS (No horizontal scroll, show all)
-            // 4. FOOTER ACTIONS
-            Container(
-              color: Colors.white,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-              child: isMobile
-                  ? Row(
-                      children: [
-                        // Action 1: Guest Folio PDF
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF0F766E),
-                              side: const BorderSide(color: Color(0xFF0F766E), width: 1.2),
-                              backgroundColor: const Color(0xFFF0FDFA),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
-                            icon: const Icon(Icons.picture_as_pdf_rounded, size: 16, color: Color(0xFF0F766E)),
-                            label: Text(
-                              'Guest Folio PDF',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
-                            ),
-                            onPressed: _pdfBusy ? null : _openGuestFolioPdf,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-
-                        // Action 2: Send on WhatsApp
-                        Expanded(
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF16A34A),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
-                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
-                            label: Text(
-                              'Send on WhatsApp',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
-                            ),
-                            onPressed: _sendFolioOnWhatsApp,
-                          ),
-                        ),
-                        if (widget.isDialog) ...[
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
-                            onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
-                          ),
-                        ],
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        // Action 1: Guest Folio PDF
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF0F766E),
-                            side: const BorderSide(color: Color(0xFF0F766E), width: 1.2),
-                            backgroundColor: const Color(0xFFF0FDFA),
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          icon: const Icon(Icons.picture_as_pdf_rounded, size: 16, color: Color(0xFF0F766E)),
-                          label: Text(
-                            'Download Guest Folio PDF',
-                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
-                          ),
-                          onPressed: _pdfBusy ? null : _openGuestFolioPdf,
-                        ),
-                        const SizedBox(width: 12),
-
-                        // Action 2: Send on WhatsApp
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF16A34A),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
-                          label: Text(
-                            'Send on WhatsApp',
-                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
-                          ),
-                          onPressed: _sendFolioOnWhatsApp,
-                        ),
-
-                        const Spacer(),
-
-                        if (widget.isDialog)
-                          ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0F766E),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            ),
-                            onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
-                            child: Text(
-                              'Close',
-                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                      ],
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF0F766E),
+                      side: const BorderSide(color: Color(0xFF0F766E), width: 1.2),
+                      backgroundColor: const Color(0xFFF0FDFA),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
+                    icon: const Icon(Icons.picture_as_pdf_rounded, size: 16, color: Color(0xFF0F766E)),
+                    label: Text(
+                      'Guest Folio PDF',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                    onPressed: _pdfBusy ? null : _openGuestFolioPdf,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF16A34A),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                    label: Text(
+                      'Send on WhatsApp',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                    onPressed: _sendFolioOnWhatsApp,
+                  ),
+                ),
+              ],
             ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _roomLine(GuestFolioModel folio) {
+    final room = folio.assignedRoom.trim().isEmpty ? '—' : folio.assignedRoom.trim();
+    final type = folio.roomType.trim();
+    if (type.isEmpty) return room.startsWith('Room') ? room : 'Room $room';
+    final roomLabel = room.toLowerCase().startsWith('room') ? room : 'Room $room';
+    return '$roomLabel ($type)';
+  }
+
+  Widget _metaIconRow(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: const Color(0xFF64748B)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: const Color(0xFF334155)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _moneyStat(String label, String value, Color valueColor) {
+    return Column(
+      children: [
+        Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: valueColor),
+        ),
+      ],
     );
   }
 
@@ -521,42 +451,30 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
     final isSelected = _activeTabIndex == index;
     return InkWell(
       onTap: () => setState(() => _activeTabIndex = index),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(9),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(9),
           boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.05),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
+              ? const [BoxShadow(color: Color(0x140F172A), blurRadius: 4, offset: Offset(0, 1))]
               : null,
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: 13,
-              color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF334155),
-            ),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.inter(
-                  fontSize: 10.5,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                  color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF334155),
-                ),
+            Icon(icon, size: 15, color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF475569)),
+            const SizedBox(height: 3),
+            Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? const Color(0xFF0F766E) : const Color(0xFF475569),
               ),
             ),
           ],
@@ -568,292 +486,349 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
   Widget _buildCurrentTabContent(GuestFolioModel folio, bool isMobile) {
     switch (_activeTabIndex) {
       case 0:
-        return _buildGuestProfileAndKYCTab(folio, isMobile);
+        return _buildStayAndRoomTab(folio);
       case 1:
-        return _buildBookingAndRoomsTab(folio, isMobile);
+        return _buildImagesTab(folio);
       case 2:
-        return _buildBillingAndPaymentsTab(folio, isMobile);
+        return _buildFolioBillingTab(folio);
       case 3:
-        return _buildActivityTimelineTab(folio, isMobile);
+        return _buildPaymentLedgerTab(folio);
       default:
-        return _buildGuestProfileAndKYCTab(folio, isMobile);
+        return _buildStayAndRoomTab(folio);
     }
   }
 
-  // ==========================================
-  // TAB 1: GUEST PROFILE & KYC
-  // ==========================================
-  Widget _buildGuestProfileAndKYCTab(GuestFolioModel folio, bool isMobile) {
+  Widget _card({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [BoxShadow(color: Color(0x060F172A), blurRadius: 8, offset: Offset(0, 2))],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Text(
+      title,
+      style: GoogleFonts.inter(fontSize: 14.5, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+    );
+  }
+
+  // TAB 0 — Stay & Room Details
+  Widget _buildStayAndRoomTab(GuestFolioModel folio) {
+    final nights = folio.totalNights > 0 ? folio.totalNights : 1;
+    final adults = folio.adultCount ?? folio.numberOfGuests;
+    final checkIn = DateFormatter.formatDateTime(folio.actualCheckIn ?? folio.checkInDate);
+    final checkOut = DateFormatter.formatDateTime(folio.actualCheckOut ?? folio.checkOutDate);
+    final notes = (folio.guestNotes ?? '').trim().isEmpty
+        ? 'No special requests recorded for this stay.'
+        : folio.guestNotes!.trim();
+    final statusLabel = switch (folio.status) {
+      FolioStatus.inHouse => 'IN-HOUSE',
+      FolioStatus.departed => 'DEPARTED',
+      FolioStatus.cancelled => 'CANCELLED',
+      FolioStatus.confirmed => 'REGISTERED',
+    };
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Card 1: Personal Information
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
+        _card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  const Icon(Icons.person_rounded, size: 16, color: Color(0xFF0F766E)),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      'Personal Information',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                    ),
-                  ),
-                ],
-              ),
+              _sectionTitle('Room & Stay Summary'),
               const SizedBox(height: 12),
-
-              // Responsive grid fields
-              if (isMobile) ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: _buildFieldColumn('Full Name', folio.guestName)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildFieldColumn(
-                        'Mobile Number',
-                        folio.phone.isNotEmpty ? folio.phone : '—',
-                        icon: Icons.phone_rounded,
-                      ),
-                    ),
-                  ],
+              _kv('Assigned Room', folio.assignedRoom.trim().isEmpty ? '—' : folio.assignedRoom),
+              _kv('Room Category', folio.roomType.trim().isEmpty ? '—' : folio.roomType),
+              _kv('Check-In Date & Time', checkIn),
+              _kv('Check-Out Date & Time', checkOut),
+              _kv('Stay Duration', '$nights Night${nights == 1 ? '' : 's'}'),
+              _kv('Number of Guests', '$adults Adult${adults == 1 ? '' : '(s)'}'),
+              _kv('Address', (folio.address ?? '').trim().isEmpty ? '—' : folio.address!.trim()),
+              const SizedBox(height: 8),
+              Text('Special Requests / Notes', style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF64748B))),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _buildFieldColumn(
-                        'Email Address',
-                        folio.email.isNotEmpty ? folio.email : '—',
-                        icon: Icons.email_outlined,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildFieldColumn(
-                        'Address / City',
-                        folio.address != null && folio.address!.isNotEmpty
-                            ? folio.address!
-                            : '—',
-                        icon: Icons.location_on_outlined,
-                      ),
-                    ),
-                  ],
-                ),
-              ] else ...[
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: _buildFieldColumn('Full Name', folio.guestName)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildFieldColumn(
-                        'Mobile Number',
-                        folio.phone.isNotEmpty ? folio.phone : '—',
-                        icon: Icons.phone_rounded,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildFieldColumn(
-                        'Email Address',
-                        folio.email.isNotEmpty ? folio.email : '—',
-                        icon: Icons.email_outlined,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: _buildFieldColumn(
-                        'Address / City',
-                        folio.address != null && folio.address!.isNotEmpty
-                            ? folio.address!
-                            : '—',
-                        icon: Icons.location_on_outlined,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              if (folio.secondaryGuestName != null && folio.secondaryGuestName!.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _buildFieldColumn('Second Guest', folio.secondaryGuestName!),
-              ],
-              if (folio.guestNotes != null && folio.guestNotes!.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _buildFieldColumn('Notes', folio.guestNotes!),
-              ],
-              if (folio.createdByName != null && folio.createdByName!.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                _buildFieldColumn('Checked In By', folio.createdByName!),
-              ],
+                child: Text(notes, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: const Color(0xFF475569))),
+              ),
             ],
           ),
         ),
-
-        const SizedBox(height: 14),
-
-        // Card 2: Govt KYC ID Proof
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
+        const SizedBox(height: 12),
+        _card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionTitle('Booking Metadata'),
+              const SizedBox(height: 10),
+              _metaRow(
+                'Booking ID / Reference',
+                folio.effectiveBookingId,
+                trailing: IconButton(
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  icon: const Icon(Icons.copy_rounded, size: 16, color: Color(0xFF0F766E)),
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: folio.effectiveBookingId));
+                    if (!mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Booking ID copied'), duration: Duration(seconds: 1)),
+                    );
+                  },
+                ),
               ),
+              _metaRow(
+                'Reservation Status',
+                statusLabel,
+                valueWidget: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFDCFCE7),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: const Color(0xFF15803D)),
+                  ),
+                ),
+              ),
+              _metaRow('Booking Date', DateFormatter.formatDate(folio.checkInDate)),
+              _metaRow(
+                'Payment Method',
+                folio.paymentMode.isEmpty ? '—' : folio.paymentMode.toUpperCase(),
+                valueWidget: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    folio.paymentMode.isEmpty ? '—' : folio.paymentMode.toUpperCase(),
+                    style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: const Color(0xFF334155)),
+                  ),
+                ),
+              ),
+              _metaRow('Handled By (Front Desk)', (folio.createdByName ?? '').trim().isEmpty ? 'Receptionist' : folio.createdByName!),
             ],
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _kv(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 150,
+            child: Text(label, style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B))),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metaRow(String label, String value, {Widget? trailing, Widget? valueWidget}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF64748B))),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(child: valueWidget ?? Text(value, style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)))),
+              if (trailing != null) trailing,
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+        ],
+      ),
+    );
+  }
+
+  // TAB 1 — Images
+  Widget _buildImagesTab(GuestFolioModel folio) {
+    return Column(
+      children: [
+        _card(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.badge_outlined, size: 16, color: Color(0xFF0F766E)),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'KYC & Govt Identity Verification',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                              Text(
-                                'Govt KYC ID Proof',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.inter(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  _sectionTitle('ID proofs'),
                   const SizedBox(width: 8),
-                  if (folio.isGovtIdVerified)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF059669),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'VERIFIED',
-                        style: GoogleFonts.inter(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
+                  _countBadge(folio.idImageUrls.length),
                 ],
               ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  const Icon(Icons.badge_outlined, size: 14, color: Color(0xFF0F766E)),
-                  const SizedBox(width: 6),
-                  Text(
-                    'UPLOADED ID PROOF PHOTOS',
-                    style: GoogleFonts.inter(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.6,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 4),
+              Text(
+                'Identity documents uploaded at check-in.',
+                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B)),
               ),
-              const SizedBox(height: 8),
-
+              const SizedBox(height: 12),
               if (folio.idImageUrls.isEmpty)
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildIdProofTile(context, 'Front ID Document', 'Front_Card.jpg', Icons.credit_card_rounded),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _buildIdProofTile(context, 'Back ID Document', 'Back_Card.jpg', Icons.badge_outlined),
-                    ),
-                  ],
-                )
+                Text('No ID proof images available.', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF94A3B8)))
               else
                 _buildImageGrid(
                   context,
                   urls: folio.idImageUrls,
-                  titleFor: (index) => 'ID Photo ${index + 1}',
-                  icon: Icons.credit_card_rounded,
+                  titleFor: (i) => 'ID proof ${i + 1}',
+                  icon: Icons.badge_outlined,
                 ),
-              if (folio.signatureUrls.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Icon(Icons.draw_outlined, size: 14, color: Color(0xFF0F766E)),
-                    const SizedBox(width: 6),
-                    Text(
-                      'SIGNATURES',
-                      style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  _sectionTitle('Signatures'),
+                  const SizedBox(width: 8),
+                  _countBadge(folio.signatureUrls.length),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Guest signature captured at check-in.',
+                style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 12),
+              if (folio.signatureUrls.isEmpty)
+                Text('No signature images available.', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF94A3B8)))
+              else
                 _buildImageGrid(
                   context,
                   urls: folio.signatureUrls,
-                  titleFor: (index) => 'Signature ${index + 1}',
+                  titleFor: (i) => 'Signature ${i + 1}',
                   icon: Icons.draw_outlined,
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _countBadge(int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFFDCFCE7),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text('$count', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: const Color(0xFF15803D))),
+    );
+  }
+
+  // TAB 2 — Folio & Billing
+  Widget _buildFolioBillingTab(GuestFolioModel folio) {
+    final roomCharges = folio.roomCharges > 0
+        ? folio.roomCharges
+        : (folio.roomRatePerNight * (folio.totalNights > 0 ? folio.totalNights : 1));
+    final discount = folio.discount;
+    final extra = folio.extraCharges;
+    const late = 0.0;
+    final taxableRaw = roomCharges - discount + extra + late;
+    final taxable = taxableRaw < 0 ? 0.0 : taxableRaw;
+    final splitTax = folio.cgstAmount <= 0 && folio.sgstAmount <= 0 && folio.tax > 0;
+    final cgst = splitTax ? folio.tax / 2 : folio.cgstAmount;
+    final sgst = splitTax ? folio.tax / 2 : folio.sgstAmount;
+    final total = folio.totalAmount;
+    final paid = folio.paidAmount > 0 ? folio.paidAmount : folio.advancePaid;
+    final balance = folio.pendingAmount;
+    final nights = folio.totalNights > 0 ? folio.totalNights : 1;
+
+    return Column(
+      children: [
+        _card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionTitle('Bill calculation'),
+              const SizedBox(height: 12),
+              _billLine('Room charges ($nights night${nights == 1 ? '' : 's'} - before tax)', CurrencyFormatter.format(roomCharges)),
+              _billLine('Discount', '-${CurrencyFormatter.format(discount)}', valueColor: const Color(0xFF16A34A)),
+              _billLine('Extra charges', CurrencyFormatter.format(extra)),
+              _billLine('Late check-out charges', CurrencyFormatter.format(late)),
+              _billLine('Taxable amount', CurrencyFormatter.format(taxable), bold: true),
+              _billLine('CGST (9%)', '+${CurrencyFormatter.format(cgst)}'),
+              _billLine('SGST (9%)', '+${CurrencyFormatter.format(sgst)}'),
+              const Divider(height: 18, color: Color(0xFFE2E8F0)),
+              _billLine('Total bill', CurrencyFormatter.format(total), bold: true),
+              const SizedBox(height: 8),
+              Text(
+                '${CurrencyFormatter.format(roomCharges)} - ${CurrencyFormatter.format(discount)} discount + ${CurrencyFormatter.format(extra)} extra + ${CurrencyFormatter.format(late)} late check-out = ${CurrencyFormatter.format(taxable)}; + GST ${CurrencyFormatter.format(cgst + sgst)} = ${CurrencyFormatter.format(total)}',
+                style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFF64748B), height: 1.35),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        _card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionTitle('Settlement Summary'),
+              const SizedBox(height: 12),
+              _billLine('Extra charges', CurrencyFormatter.format(extra)),
+              _billLine('Late check-out charges', CurrencyFormatter.format(late)),
+              const Divider(height: 18, color: Color(0xFFE2E8F0)),
+              _billLine('Gross Total', CurrencyFormatter.format(total), bold: true),
+              _billLine('Total Paid (Advance & Settled)', CurrencyFormatter.format(paid), valueColor: const Color(0xFF16A34A)),
+              const Divider(height: 18, color: Color(0xFFE2E8F0)),
+              _billLine('Balance Remaining', CurrencyFormatter.format(balance), bold: true, valueColor: balance > 0 ? const Color(0xFFDC2626) : const Color(0xFF16A34A)),
+              if (balance > 0) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7ED),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFED7AA)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, size: 18, color: Color(0xFFEA580C)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Outstanding balance of ${CurrencyFormatter.format(balance)} pending collection at reception desk.',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF9A3412)),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ],
@@ -863,843 +838,132 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
     );
   }
 
-  // ==========================================
-  // TAB 2: BOOKING & ROOMS
-  // ==========================================
-  Widget _buildBookingAndRoomsTab(GuestFolioModel folio, bool isMobile) {
-    final nights = folio.totalNights > 0 ? folio.totalNights : 1;
-    final totalRoomPrice = folio.roomRatePerNight * nights > 0
-        ? folio.roomRatePerNight * nights
-        : (folio.totalAmount > 0 ? folio.totalAmount : 3500.0);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Card 1: Stay Schedule & Duration
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
+  Widget _billLine(String label, String value, {bool bold = false, Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12.5,
+                fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+                color: const Color(0xFF334155),
               ),
-            ],
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.calendar_today_rounded, size: 15, color: Color(0xFF0F766E)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Stay Schedule & Duration',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildFieldColumn(
-                      'Check-In Date',
-                      '${folio.checkInDate.day.toString().padLeft(2, '0')}/${folio.checkInDate.month.toString().padLeft(2, '0')}/${folio.checkInDate.year}',
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildFieldColumn(
-                      'Check-Out Date',
-                      '${folio.checkOutDate.day.toString().padLeft(2, '0')}/${folio.checkOutDate.month.toString().padLeft(2, '0')}/${folio.checkOutDate.year}',
-                    ),
-                  ),
-                  Expanded(
-                    child: _buildFieldColumn(
-                      'Duration / Nights',
-                      '$nights Night(s)',
-                      valueColor: const Color(0xFF0F766E),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          Text(
+            value,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
+              color: valueColor ?? const Color(0xFF0F172A),
+            ),
           ),
-        ),
+        ],
+      ),
+    );
+  }
 
-        const SizedBox(height: 14),
+  // TAB 3 — Payment Ledger
+  Widget _buildPaymentLedgerTab(GuestFolioModel folio) {
+    final paid = folio.paidAmount > 0 ? folio.paidAmount : folio.advancePaid;
+    final rows = folio.payments.isNotEmpty
+        ? folio.payments
+        : (paid > 0
+            ? [
+                PaymentRecordModel(
+                  id: folio.receiptNumber ?? 'ADVANCE',
+                  date: folio.actualCheckIn ?? folio.checkInDate,
+                  amount: paid,
+                  paymentMethod: folio.paymentMode.isNotEmpty ? folio.paymentMode : 'UPI',
+                  reference: 'Booking',
+                  status: folio.paymentStatusLabel,
+                ),
+              ]
+            : <PaymentRecordModel>[]);
 
-        // Card 2: Allocated Room Details
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.meeting_room_outlined, size: 16, color: Color(0xFF0F766E)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Allocated Room Details (1)',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              Container(
-                padding: const EdgeInsets.all(14),
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle('Payment Receipts & Transaction Ledger'),
+          const SizedBox(height: 12),
+          if (rows.isEmpty)
+            Text('No payment receipts yet.', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF94A3B8)))
+          else
+            ...rows.map((p) {
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF0FDFA),
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFFCCFBF1)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Text(
+                      DateFormatter.formatDateTime(p.date),
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF0F766E)),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        Expanded(
-                          child: Text(
-                            'Room #${folio.assignedRoom}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w800,
-                              color: const Color(0xFF0F766E),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
-                            color: folio.status == FolioStatus.inHouse
-                                ? const Color(0xFFDCFCE7)
-                                : const Color(0xFFE2E8F0),
-                            borderRadius: BorderRadius.circular(6),
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
-                            folio.status == FolioStatus.inHouse ? 'OCCUPIED' : 'AVAILABLE',
-                            style: GoogleFonts.inter(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              color: folio.status == FolioStatus.inHouse
-                                  ? const Color(0xFF15803D)
-                                  : const Color(0xFF334155),
-                            ),
+                            p.paymentMethod.toUpperCase(),
+                            style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: const Color(0xFF334155)),
                           ),
                         ),
+                        Text('Source: ${p.reference.isEmpty ? 'Booking' : p.reference}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600)),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
                     Text(
-                      folio.roomType.isNotEmpty ? folio.roomType : 'Deluxe Room',
-                      style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                      'Received By: ${(folio.createdByName ?? '').trim().isEmpty ? 'Receptionist' : folio.createdByName!}',
+                      style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF475569)),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${CurrencyFormatter.format(folio.roomRatePerNight > 0 ? folio.roomRatePerNight : 3500.0)} / night • $nights Night(s)',
-                      style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
-                    ),
-                    const SizedBox(height: 10),
-                    const Divider(height: 1, color: Color(0xFFCCFBF1)),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Room Total:',
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                          CurrencyFormatter.format(p.amount),
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: const Color(0xFF16A34A)),
                         ),
-                        Text(
-                          CurrencyFormatter.format(totalRoomPrice),
-                          style: GoogleFonts.inter(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w800,
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
                             color: const Color(0xFF0F766E),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            p.status.toUpperCase(),
+                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white),
                           ),
                         ),
                       ],
                     ),
                   ],
                 ),
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 14),
-
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.hotel_rounded, size: 16, color: Color(0xFF0F766E)),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      'Current Stay Details',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildFieldColumn('Assigned Room', '${folio.assignedRoom} (${folio.roomType})'),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildFieldColumn('Keycard Status', folio.keycardStatus, icon: Icons.nfc_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              _buildFieldColumn(
-                'Guests',
-                '${folio.adultCount ?? folio.numberOfGuests} Adult${(folio.adultCount ?? folio.numberOfGuests) == 1 ? '' : 's'}'
-                    '${folio.childCount != null ? ', ${folio.childCount} Child${folio.childCount == 1 ? '' : 'ren'}' : ''}',
-                icon: Icons.people_outline_rounded,
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildFieldColumn(
-                      'Check-In Date',
-                      DateFormatter.formatDate(folio.actualCheckIn ?? folio.checkInDate),
-                      icon: Icons.login_rounded,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildFieldColumn(
-                      'Check-Out Date',
-                      DateFormatter.formatDate(folio.actualCheckOut ?? folio.checkOutDate),
-                      icon: Icons.logout_rounded,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ==========================================
-  // TAB 3: BILLING & PAYMENTS
-  // ==========================================
-  Widget _buildBillingAndPaymentsTab(GuestFolioModel folio, bool isMobile) {
-    final effectiveTotal = folio.totalAmount > 0 ? folio.totalAmount : 3500.0;
-    final effectivePaid = folio.paidAmount > 0 ? folio.paidAmount : (folio.advancePaid > 0 ? folio.advancePaid : effectiveTotal);
-    final effectivePending = folio.pendingAmount;
-    final splitTax = folio.cgstAmount <= 0 && folio.sgstAmount <= 0 && folio.tax > 0;
-    final cgst = splitTax ? folio.tax / 2 : folio.cgstAmount;
-    final sgst = splitTax ? folio.tax / 2 : folio.sgstAmount;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.receipt_long_rounded, size: 16, color: Color(0xFF0F766E)),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      'Folio & Billing Breakdown',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildFieldColumn('Total Folio Amount', CurrencyFormatter.format(folio.totalAmount)),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildFieldColumn('Advance / Paid', CurrencyFormatter.format(folio.advancePaid), valueColor: const Color(0xFF059669)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildFieldColumn('Pending Balance', CurrencyFormatter.format(folio.pendingAmount), valueColor: folio.hasPendingPayment ? const Color(0xFFDC2626) : const Color(0xFF059669)),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _buildFieldColumn('Payment Mode', folio.paymentMode, icon: Icons.payment_rounded),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _buildFieldColumn('Room Charge', CurrencyFormatter.format(folio.roomCharges))),
-                  const SizedBox(width: 10),
-                  Expanded(child: _buildFieldColumn('CGST', CurrencyFormatter.format(folio.cgstAmount))),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: _buildFieldColumn('SGST', CurrencyFormatter.format(folio.sgstAmount))),
-                  const SizedBox(width: 10),
-                  Expanded(child: _buildFieldColumn('Extra Charges', CurrencyFormatter.format(folio.extraCharges))),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildFieldColumn(
-                      'Discount',
-                      folio.discount > 0
-                          ? '-${CurrencyFormatter.format(folio.discount)}'
-                          : CurrencyFormatter.format(0),
-                      valueColor: folio.discount > 0 ? const Color(0xFFDC2626) : null,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Expanded(child: SizedBox.shrink()),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        // Card 1: Financial Settlement & Tax Details
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.receipt_long_rounded, size: 15, color: Color(0xFF0F766E)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Financial Settlement & Tax Details',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _settlementAmount(
-                      'Base Amount',
-                      CurrencyFormatter.format(effectiveTotal),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _settlementAmount(
-                      'GST / Taxes',
-                      folio.tax > 0 ? CurrencyFormatter.format(folio.tax) : '₹0',
-                      notes: [
-                        'CGST ${CurrencyFormatter.format(cgst)}',
-                        'SGST ${CurrencyFormatter.format(sgst)}',
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: _settlementAmount(
-                      'Paid Amount',
-                      CurrencyFormatter.format(effectivePaid),
-                      valueColor: const Color(0xFF059669),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _settlementAmount(
-                      'Pending Due',
-                      CurrencyFormatter.format(effectivePending),
-                      valueColor: effectivePending > 0 ? const Color(0xFFDC2626) : const Color(0xFF059669),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              _settlementAmount(
-                'Discount',
-                folio.discount > 0 ? '-${CurrencyFormatter.format(folio.discount)}' : CurrencyFormatter.format(0),
-                valueColor: folio.discount > 0 ? const Color(0xFFDC2626) : AppColors.textPrimary,
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 14),
-
-        // Card 2: Payment Transaction History
-        Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.payment_rounded, size: 16, color: Color(0xFF0F766E)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Payment Transaction History (${folio.payments.isNotEmpty ? folio.payments.length : 1})',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.55),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  primary: false,
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: folio.payments.isNotEmpty ? folio.payments.length : 1,
-                  separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) {
-                    if (folio.payments.isEmpty) {
-                      final method = folio.paymentMode.isNotEmpty ? folio.paymentMode : 'CASH';
-                      return _paymentHistoryCard(
-                        date: DateFormatter.formatShort(folio.checkInDate),
-                        transactionId: folio.receiptNumber ?? 'RCP-691574',
-                        description: 'Full Check-in / Checkout Settlement - $method settlement at check-in',
-                        method: method.toUpperCase(),
-                        amount: CurrencyFormatter.format(effectivePaid),
-                        gst: '₹0',
-                        total: CurrencyFormatter.format(effectivePaid),
-                        status: 'PAID',
-                      );
-                    }
-                    final payment = folio.payments[index];
-                    return _paymentHistoryCard(
-                      date: DateFormatter.formatShort(payment.date),
-                      transactionId: payment.reference,
-                      description: 'Payment settlement via ${payment.paymentMethod}',
-                      method: payment.paymentMethod.toUpperCase(),
-                      amount: CurrencyFormatter.format(payment.amount),
-                      gst: '₹0',
-                      total: CurrencyFormatter.format(payment.amount),
-                      status: payment.status.toUpperCase(),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _paymentHistoryCard({
-    required String date,
-    required String transactionId,
-    required String description,
-    required String method,
-    required String amount,
-    required String gst,
-    required String total,
-    required String status,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FFFE),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _paymentDetail('Date', date)),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFDCFCE7),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  status,
-                  style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.w800, color: const Color(0xFF15803D)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _paymentDetail('Transaction ID', transactionId.isEmpty ? '—' : transactionId, valueColor: const Color(0xFF0F766E)),
-          const SizedBox(height: 10),
-          _paymentDetail('Description', description),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _paymentDetail('Method', method)),
-              const SizedBox(width: 8),
-              Expanded(child: _paymentDetail('Amount', amount)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _paymentDetail('GST', gst)),
-              const SizedBox(width: 8),
-              Expanded(child: _paymentDetail('Total', total, emphasize: true)),
-            ],
-          ),
+              );
+            }),
         ],
       ),
     );
   }
 
-  Widget _paymentDetail(String label, String value, {Color? valueColor, bool emphasize = false}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F766E)),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          value,
-          style: GoogleFonts.inter(
-            fontSize: emphasize ? 13 : 12,
-            height: 1.35,
-            fontWeight: emphasize ? FontWeight.w800 : FontWeight.w600,
-            color: valueColor ?? AppColors.textPrimary,
-          ),
-        ),
-      ],
-    );
-  }
 
-  // ==========================================
-  // TAB 4: ACTIVITY TIMELINE
-  // ==========================================
-  Widget _buildActivityTimelineTab(GuestFolioModel folio, bool isMobile) {
-    final checkInTimeStr = '${folio.checkInDate.day.toString().padLeft(2, '0')}/${folio.checkInDate.month.toString().padLeft(2, '0')}/${folio.checkInDate.year}, 12:01:31 pm';
-    final checkOutTimeStr = '${folio.checkOutDate.day.toString().padLeft(2, '0')}/${folio.checkOutDate.month.toString().padLeft(2, '0')}/${folio.checkOutDate.year}, 12:16:20 pm';
-
-    final timelineEvents = [
-      _TimelineEvent(
-        title: 'Checked In',
-        time: checkInTimeStr,
-        desc: 'Guest checked in to Room #${folio.assignedRoom}.',
-      ),
-      _TimelineEvent(
-        title: 'Booking Created',
-        time: checkInTimeStr,
-        desc: 'Booking #${folio.effectiveBookingId} created for ${folio.totalNights > 0 ? folio.totalNights : 1} night(s).',
-      ),
-      _TimelineEvent(
-        title: 'Room Allocated',
-        time: checkInTimeStr,
-        desc: 'Allocated Room #${folio.assignedRoom} (${folio.roomType.isNotEmpty ? folio.roomType : "Deluxe Room"}).',
-      ),
-      _TimelineEvent(
-        title: 'Payment Received',
-        time: checkInTimeStr,
-        desc: 'Payment of ${CurrencyFormatter.format(folio.advancePaid > 0 ? folio.advancePaid : (folio.paidAmount > 0 ? folio.paidAmount : 3500.0))} received via ${folio.paymentMode.isNotEmpty ? folio.paymentMode : "CASH"}.',
-      ),
-      if (folio.status == FolioStatus.departed)
-        _TimelineEvent(
-          title: 'Checked Out',
-          time: checkOutTimeStr,
-          desc: 'Folio closed and checkout finalized.',
-        ),
-    ];
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.timeline_rounded, size: 16, color: Color(0xFF0F766E)),
-              const SizedBox(width: 6),
-              Text(
-                'Real-time Stay Activity Timeline',
-                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Timeline items
-          ...List.generate(timelineEvents.length, (idx) {
-            final ev = timelineEvents[idx];
-            final isLast = idx == timelineEvents.length - 1;
-
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Node + connector
-                Column(
-                  children: [
-                    Container(
-                      width: 22,
-                      height: 22,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF0F766E),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.check, size: 13, color: Colors.white),
-                    ),
-                    if (!isLast)
-                      Container(
-                        width: 2,
-                        height: 44,
-                        color: const Color(0xFF99F6E4),
-                      ),
-                  ],
-                ),
-                const SizedBox(width: 12),
-
-                // Content
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            ev.title,
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary,
-                            ),
-                          ),
-                          Text(
-                            ev.time,
-                            style: GoogleFonts.inter(
-                              fontSize: 10.5,
-                              color: AppColors.textSecondary,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        ev.desc,
-                        style: GoogleFonts.inter(
-                          fontSize: 11.5,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      if (!isLast) const SizedBox(height: 18),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFieldColumn(String label, String value, {IconData? icon, Color? valueColor}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary),
-        ),
-        const SizedBox(height: 3),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, size: 12, color: const Color(0xFF0F766E)),
-              const SizedBox(width: 4),
-            ],
-            Flexible(
-              child: Text(
-                value,
-                style: GoogleFonts.inter(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: valueColor ?? AppColors.textPrimary,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _settlementAmount(
-    String label,
-    String value, {
-    Color? valueColor,
-    List<String> notes = const [],
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: GoogleFonts.inter(fontSize: 11, color: AppColors.textSecondary)),
-        const SizedBox(height: 3),
-        Text(
-          value,
-          style: GoogleFonts.inter(
-            fontSize: 14.5,
-            fontWeight: FontWeight.w900,
-            color: valueColor ?? AppColors.textPrimary,
-          ),
-        ),
-        for (final note in notes) ...[
-          const SizedBox(height: 2),
-          Text(
-            note,
-            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textMuted),
-          ),
-        ],
-      ],
-    );
-  }
 
   Widget _buildImageGrid(
     BuildContext context, {
@@ -1980,14 +1244,3 @@ class _BookingNetworkImage extends StatelessWidget {
   }
 }
 
-class _TimelineEvent {
-  final String title;
-  final String time;
-  final String desc;
-
-  const _TimelineEvent({
-    required this.title,
-    required this.time,
-    required this.desc,
-  });
-}

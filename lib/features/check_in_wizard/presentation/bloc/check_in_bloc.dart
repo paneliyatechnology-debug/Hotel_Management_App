@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../dashboard/domain/repositories/dashboard_repository.dart';
+import '../../../rooms/data/models/room_model.dart';
 import '../../data/models/check_in_form_data.dart';
 import '../../../../core/widgets/status_badge.dart';
 import 'check_in_event.dart';
@@ -58,22 +59,43 @@ class CheckInBloc extends Bloc<CheckInEvent, CheckInState> {
     }
 
     CheckInFormData initData = CheckInFormData();
-    if (event.preselectedRoom != null) {
+    final seededRooms = <RoomModel>[
+      ...?event.preselectedRooms,
+      if (event.preselectedRoom != null) event.preselectedRoom!,
+    ];
+    final uniqueSeeded = <RoomModel>[];
+    for (final room in seededRooms) {
+      if (uniqueSeeded.any((item) => item.id == room.id)) continue;
+      uniqueSeeded.add(room);
+      if (!available.any((item) => item.id == room.id)) {
+        available.insert(0, room);
+      }
+    }
+
+    if (uniqueSeeded.isNotEmpty) {
+      final gstRoom = uniqueSeeded.firstWhere(
+        (room) => room.gstEnabled,
+        orElse: () => uniqueSeeded.first,
+      );
       initData = CheckInFormData(
-        selectedRoomId: event.preselectedRoom!.id,
-        selectedRoomNumber: event.preselectedRoom!.roomNumber,
-        selectedFloor: event.preselectedRoom!.floor,
-        roomType: event.preselectedRoom!.roomType,
-        pricePerNight: event.preselectedRoom!.pricePerNight,
-        gstEnabled: event.preselectedRoom!.gstEnabled,
-        gstRate: event.preselectedRoom!.gstEnabled ? event.preselectedRoom!.gstRate : 0,
+        selectedRoomId: uniqueSeeded.first.id,
+        selectedRoomIds: uniqueSeeded.map((room) => room.id).toList(),
+        selectedRoomNumber: uniqueSeeded.map((room) => room.roomNumber).join(', '),
+        selectedFloor: uniqueSeeded.length == 1
+            ? uniqueSeeded.first.floor
+            : '${uniqueSeeded.length} rooms',
+        roomType: uniqueSeeded.map((room) => room.roomType).toSet().join(' + '),
+        pricePerNight: uniqueSeeded.fold<double>(0, (sum, room) => sum + room.pricePerNight),
+        gstEnabled: uniqueSeeded.any((room) => room.gstEnabled),
+        gstRate: uniqueSeeded.any((room) => room.gstEnabled) ? gstRoom.gstRate : 0,
         isRoomPreLocked: true,
-        assignedKeycardNumber: event.preselectedRoom!.keyCode.trim(),
+        assignedKeycardNumber: uniqueSeeded.first.keyCode.trim(),
       );
     } else if (available.isNotEmpty) {
       final firstRoom = available.first;
       initData = CheckInFormData(
         selectedRoomId: firstRoom.id,
+        selectedRoomIds: [firstRoom.id],
         selectedRoomNumber: firstRoom.roomNumber,
         selectedFloor: firstRoom.floor,
         roomType: firstRoom.roomType,
@@ -175,14 +197,38 @@ class CheckInBloc extends Bloc<CheckInEvent, CheckInState> {
     Emitter<CheckInState> emit,
   ) {
     final updated = state.formData.copy();
-    updated.selectedRoomId = event.room.id;
-    updated.selectedRoomNumber = event.room.roomNumber;
-    updated.selectedFloor = event.room.floor;
-    updated.roomType = event.room.roomType;
-    updated.pricePerNight = event.room.pricePerNight;
-    updated.gstEnabled = event.room.gstEnabled;
-    updated.gstRate = event.room.gstEnabled ? event.room.gstRate : 0;
-    updated.assignedKeycardNumber = event.room.keyCode.trim();
+    final ids = List<String>.from(updated.selectedRoomIds);
+    if (ids.contains(event.room.id)) {
+      if (ids.length > 1) ids.remove(event.room.id);
+    } else {
+      ids.add(event.room.id);
+    }
+    final selectedRooms = <RoomModel>[];
+    for (final id in ids) {
+      final match = state.availableRooms.where((room) => room.id == id);
+      if (match.isNotEmpty) {
+        selectedRooms.add(match.first);
+      } else if (event.room.id == id) {
+        selectedRooms.add(event.room);
+      }
+    }
+    if (selectedRooms.isEmpty) selectedRooms.add(event.room);
+    updated.selectedRoomIds = selectedRooms.map((room) => room.id).toList();
+    updated.selectedRoomId = selectedRooms.first.id;
+    updated.selectedRoomNumber = selectedRooms.map((room) => room.roomNumber).join(', ');
+    updated.selectedFloor = selectedRooms.length == 1
+        ? selectedRooms.first.floor
+        : '${selectedRooms.length} rooms';
+    updated.roomType = selectedRooms.map((room) => room.roomType).toSet().join(' + ');
+    updated.pricePerNight =
+        selectedRooms.fold<double>(0, (sum, room) => sum + room.pricePerNight);
+    updated.gstEnabled = selectedRooms.any((room) => room.gstEnabled);
+    final gstRoom = selectedRooms.firstWhere(
+      (room) => room.gstEnabled,
+      orElse: () => selectedRooms.first,
+    );
+    updated.gstRate = updated.gstEnabled ? gstRoom.gstRate : 0;
+    updated.assignedKeycardNumber = selectedRooms.first.keyCode.trim();
     emit(state.copyWith(formData: updated));
   }
 
