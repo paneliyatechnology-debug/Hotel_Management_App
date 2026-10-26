@@ -39,7 +39,10 @@ class _Step4PaymentSettleState extends State<Step4PaymentSettle> {
         ? widget.formData.advancePaid
         : widget.formData.grandTotal;
     _advanceController = TextEditingController(text: initialAdvance.toStringAsFixed(0));
-    _discountController = TextEditingController(text: widget.formData.discountAmount.toStringAsFixed(0));
+    _discountController = TextEditingController(
+        text: widget.formData.discountAmount > 0
+            ? widget.formData.discountAmount.toStringAsFixed(0)
+            : '');
     _txnRefController = TextEditingController(text: widget.formData.transactionRef);
 
     if (widget.formData.advancePaid == 0) {
@@ -247,6 +250,7 @@ class _Step4PaymentSettleState extends State<Step4PaymentSettle> {
           const SizedBox(height: 12),
           CustomTextField(
             label: 'Promo Discount (₹)',
+            hintText: '0',
             controller: _discountController,
             keyboardType: TextInputType.number,
             prefixIcon: Icons.discount_outlined,
@@ -274,6 +278,7 @@ class _Step4PaymentSettleState extends State<Step4PaymentSettle> {
               Expanded(
                 child: CustomTextField(
                   label: 'Promo Discount (₹)',
+                  hintText: '0',
                   controller: _discountController,
                   keyboardType: TextInputType.number,
                   prefixIcon: Icons.discount_outlined,

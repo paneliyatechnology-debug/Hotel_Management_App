@@ -33,8 +33,8 @@ void main() {
       expect(find.text('8849218118'), findsOneWidget);
       expect(find.text('Hotel Property'), findsOneWidget);
       expect(find.textContaining('218, Arth Bussiness Center'), findsOneWidget);
-      expect(find.text('Check-In / Out Policy'), findsOneWidget);
-      expect(find.textContaining('Check-In: 14:00 | Check-Out: 12:00'), findsOneWidget);
+      expect(find.text('Check-In / Out Policy'), findsNothing);
+      expect(find.textContaining('Check-In: 14:00 | Check-Out: 12:00'), findsNothing);
 
       // 3. Verify Account Session & Sign Out Card
       expect(find.text('Account Session & Sign Out'), findsOneWidget);

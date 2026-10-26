@@ -9,6 +9,7 @@ import '../../data/models/hotel_stats_model.dart';
 class HotelAdminTelemetryCards extends StatelessWidget {
   final HotelStatsModel stats;
   final VoidCallback? onRevenueTap;
+  final VoidCallback? onWeeklyTap;
   final VoidCallback? onEarningsTap;
   final VoidCallback? onGuestsTap;
   final VoidCallback? onMonthlyTap;
@@ -17,6 +18,7 @@ class HotelAdminTelemetryCards extends StatelessWidget {
     super.key,
     required this.stats,
     this.onRevenueTap,
+    this.onWeeklyTap,
     this.onEarningsTap,
     this.onGuestsTap,
     this.onMonthlyTap,
@@ -24,11 +26,12 @@ class HotelAdminTelemetryCards extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final outstandingValue = stats.fromAdminApi
-        ? CurrencyFormatter.format(stats.outstandingDue)
-        : CurrencyFormatter.format(stats.totalToday * 0.785);
-    final outstandingSubtitle = stats.fromAdminApi ? 'Still to collect' : '78.5% margin';
-    final outstandingTitle = stats.fromAdminApi ? 'Outstanding' : "Today's earnings";
+    final weeklyAmount = stats.weeklyRevenue > 0
+        ? stats.weeklyRevenue
+        : (stats.fromAdminApi && stats.totalToday > 0
+            ? stats.totalToday
+            : stats.totalToday * 3.5);
+    final weeklyValue = CurrencyFormatter.format(weeklyAmount);
 
     final monthValue = CurrencyFormatter.format(
       stats.fromAdminApi ? stats.monthRevenue : stats.totalToday * 24,
@@ -46,16 +49,16 @@ class HotelAdminTelemetryCards extends StatelessWidget {
       onTap: onRevenueTap,
     );
 
-    final outstandingCard = MetricCard(
-      title: outstandingTitle,
-      displayTitle: outstandingTitle,
-      displayValue: outstandingValue,
-      subtitle: outstandingSubtitle,
-      tagLabel: 'Due',
+    final weeklyCard = MetricCard(
+      title: 'Weekly revenue',
+      displayTitle: 'Weekly revenue',
+      displayValue: weeklyValue,
+      subtitle: '7-day cycle',
+      tagLabel: 'Weekly',
       themeColor: const Color(0xFFD97706),
       badgeBgColor: const Color(0xFFFFFBEB),
-      icon: Icons.account_balance_wallet_rounded,
-      onTap: onEarningsTap,
+      icon: Icons.date_range_rounded,
+      onTap: onWeeklyTap ?? onEarningsTap,
     );
 
     final guestsCard = MetricCard(
@@ -113,7 +116,7 @@ class HotelAdminTelemetryCards extends StatelessWidget {
           childAspectRatio: 1.35,
           children: [
             revenueCard,
-            outstandingCard,
+            weeklyCard,
             guestsCard,
             monthCard,
           ],

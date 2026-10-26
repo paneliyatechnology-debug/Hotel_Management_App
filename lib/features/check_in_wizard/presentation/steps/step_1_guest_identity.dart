@@ -92,32 +92,47 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
   @override
   void didUpdateWidget(covariant Step1GuestIdentity oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.formData.guestFullName != _nameController.text) {
+    final isNewBookingLoaded = widget.formData.editingBookingId != oldWidget.formData.editingBookingId;
+    final isAsyncFormPopulated = oldWidget.formData.guestFullName.isEmpty &&
+        widget.formData.guestFullName.isNotEmpty &&
+        _nameController.text.isEmpty;
+
+    if (isNewBookingLoaded || isAsyncFormPopulated) {
       _nameController.text = widget.formData.guestFullName;
-    }
-    if (widget.formData.idNumber != _idNumberController.text) {
       _idNumberController.text = widget.formData.idNumber;
-    }
-    if (widget.formData.contactPhone != _phoneController.text) {
       _phoneController.text = widget.formData.contactPhone;
-    }
-    if (widget.formData.email != _emailController.text) {
       _emailController.text = widget.formData.email;
-    }
-    if (widget.formData.residentialAddress != _addressController.text) {
       _addressController.text = widget.formData.residentialAddress;
-    }
-    if ((widget.formData.secondGuestName ?? '') != _secondGuestNameController.text) {
-      _secondGuestNameController.text = widget.formData.secondGuestName ?? '';
-    }
-    if ((widget.formData.secondGuestPhone ?? '') != _secondGuestPhoneController.text) {
       _secondGuestPhoneController.text = widget.formData.secondGuestPhone ?? '';
+
+      final incomingGuests = <String>[];
+      if ((widget.formData.secondGuestName ?? '').trim().isNotEmpty) {
+        incomingGuests.add(widget.formData.secondGuestName!.trim());
+      }
+      for (final guest in widget.formData.accompanyingGuests) {
+        final name = guest.name.trim();
+        if (name.isNotEmpty && !incomingGuests.contains(name)) {
+          incomingGuests.add(name);
+        }
+      }
+      if (incomingGuests.isEmpty) incomingGuests.add('');
+
+      for (final c in _additionalGuestControllers) {
+        c.dispose();
+      }
+      _additionalGuestControllers = incomingGuests
+          .map((name) => TextEditingController(text: name))
+          .toList();
     }
+
     if (widget.formData.idFrontPhotoUrl != _primaryIdPhotoUrl) {
       _primaryIdPhotoUrl = widget.formData.idFrontPhotoUrl;
     }
     if (widget.formData.idBackPhotoUrl != _primaryIdBackPhotoUrl) {
       _primaryIdBackPhotoUrl = widget.formData.idBackPhotoUrl;
+    }
+    if (widget.formData.isIdVerified != _isIdVerified) {
+      _isIdVerified = widget.formData.isIdVerified;
     }
     _idPhotos = List<String>.from(widget.formData.idPhotos);
     if (_primaryIdPhotoUrl != null && !_idPhotos.contains(_primaryIdPhotoUrl)) {
@@ -131,7 +146,6 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
       }
     }
     _selectedIdType = _idTypes.contains(widget.formData.idType) ? widget.formData.idType : 'Aadhaar Card';
-    _isIdVerified = widget.formData.isIdVerified;
   }
 
   @override
@@ -166,11 +180,12 @@ class _Step1GuestIdentityState extends State<Step1GuestIdentity> {
         : null;
 
     final List<AccompanyingGuest> updatedGuests = [];
-    for (int i = 0; i < _additionalGuestControllers.length; i++) {
+    for (int i = 1; i < _additionalGuestControllers.length; i++) {
       final name = _additionalGuestControllers[i].text.trim();
       if (name.isNotEmpty) {
-        if (i < widget.formData.accompanyingGuests.length) {
-          final existing = widget.formData.accompanyingGuests[i].copy();
+        final accompanyingIdx = i - 1;
+        if (accompanyingIdx < widget.formData.accompanyingGuests.length) {
+          final existing = widget.formData.accompanyingGuests[accompanyingIdx].copy();
           existing.name = name;
           updatedGuests.add(existing);
         } else {

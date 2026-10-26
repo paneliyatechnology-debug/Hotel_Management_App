@@ -9,10 +9,11 @@ import '../../data/repositories/hotel_admin_repository.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../bloc/dashboard_event.dart';
 import '../live/room_live_hub.dart';
-import '../widgets/dashboard_period_summary_card.dart';
 import '../widgets/dashboard_shimmer_loader.dart';
 import '../widgets/hotel_admin_telemetry_cards.dart';
 import '../widgets/hotel_admin_charts.dart';
+import '../../../guests/presentation/pages/guests_tab_screen.dart';
+import 'admin_daily_collections_page.dart';
 class AdminDashboardMemory {
   static AdminDashboardSnapshot? snapshot;
 
@@ -54,7 +55,6 @@ class HotelAdminDashboardView extends StatefulWidget {
 }
 
 class HotelAdminDashboardViewState extends State<HotelAdminDashboardView> {
-  final GlobalKey<DashboardPeriodSummaryCardState> _summaryKey = GlobalKey();
   AdminDashboardSnapshot? _dashboard;
   bool _loadingDashboard = false;
 
@@ -65,6 +65,7 @@ class HotelAdminDashboardViewState extends State<HotelAdminDashboardView> {
   HotelStatsModel get _displayStats {
     final dash = _dashboard;
     if (dash == null) return widget.stats;
+    final weeklyTotal = dash.weeklyRevenue.fold<double>(0, (sum, item) => sum + item.revenue);
     return HotelStatsModel(
       availableVacant: dash.availableRooms,
       occupiedInHouse: dash.occupiedRooms,
@@ -78,6 +79,7 @@ class HotelAdminDashboardViewState extends State<HotelAdminDashboardView> {
       checkedInToday: dash.checkedInToday,
       monthRevenue: dash.monthRevenue,
       outstandingDue: dash.outstandingDue,
+      weeklyRevenue: weeklyTotal > 0 ? weeklyTotal : widget.stats.weeklyRevenue,
       occupancyRatePercentage: dash.occupancyRatePercentage,
       totalPhysicalRooms: dash.totalPhysicalRooms,
       activeStaffCount: dash.activeStaffCount,
@@ -143,10 +145,7 @@ class HotelAdminDashboardViewState extends State<HotelAdminDashboardView> {
   Future<void> syncLiveData() async {
     if (_skipLiveNetwork) return;
     context.read<DashboardBloc>().add(RefreshDashboardDataEvent());
-    await Future.wait([
-      _loadAdminDashboard(),
-      _summaryKey.currentState?.reload() ?? Future<void>.value(),
-    ]);
+    await _loadAdminDashboard();
   }
 
   @override
@@ -158,10 +157,7 @@ class HotelAdminDashboardViewState extends State<HotelAdminDashboardView> {
       color: const Color(0xFF0F766E),
       onRefresh: () async {
         context.read<DashboardBloc>().add(RefreshDashboardDataEvent());
-        await Future.wait([
-          _loadAdminDashboard(),
-          _summaryKey.currentState?.reload() ?? Future<void>.value(),
-        ]);
+        await _loadAdminDashboard();
       },
       child: _loadingDashboard && _dashboard == null
           ? ListView(
@@ -177,13 +173,40 @@ class HotelAdminDashboardViewState extends State<HotelAdminDashboardView> {
           // 1. Financial & Revenue Telemetry Section (4 Cards Grid)
           HotelAdminTelemetryCards(
             stats: stats,
-          ),
-
-          const SizedBox(height: 14),
-
-          DashboardPeriodSummaryCard(
-            key: _summaryKey,
-            enabled: !_skipLiveNetwork,
+            onRevenueTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AdminDailyCollectionsPage(
+                    initialPreset: AdminCollectionsPreset.today,
+                  ),
+                ),
+              );
+            },
+            onWeeklyTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AdminDailyCollectionsPage(
+                    initialPreset: AdminCollectionsPreset.week,
+                  ),
+                ),
+              );
+            },
+            onGuestsTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const GuestsTabScreen(showAppBar: true),
+                ),
+              );
+            },
+            onMonthlyTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const AdminDailyCollectionsPage(
+                    initialPreset: AdminCollectionsPreset.month,
+                  ),
+                ),
+              );
+            },
           ),
 
           const SizedBox(height: 14),

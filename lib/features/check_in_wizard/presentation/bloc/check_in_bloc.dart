@@ -41,22 +41,32 @@ class CheckInBloc extends Bloc<CheckInEvent, CheckInState> {
     InitCheckInWizardEvent event,
     Emitter<CheckInState> emit,
   ) async {
-    final allRooms = await repository.getRooms();
-    final available = allRooms.where((r) => r.status == RoomStatus.available).toList();
     if (event.existingForm != null) {
       final current = event.preselectedRoom;
-      if (current != null && !available.any((room) => room.id == current.id)) {
-        available.insert(0, current);
-      }
+      final seededRooms = <RoomModel>[
+        ?current,
+        ...state.availableRooms,
+      ];
       emit(state.copyWith(
         currentStep: 0,
         formData: event.existingForm!.copy(),
-        availableRooms: available,
+        availableRooms: seededRooms,
         status: CheckInStatus.editing,
         showValidationErrors: false,
       ));
+      try {
+        final allRooms = await repository.getRooms();
+        final available = allRooms.where((r) => r.status == RoomStatus.available).toList();
+        if (current != null && !available.any((room) => room.id == current.id)) {
+          available.insert(0, current);
+        }
+        emit(state.copyWith(availableRooms: available));
+      } catch (_) {}
       return;
     }
+
+    final allRooms = await repository.getRooms();
+    final available = allRooms.where((r) => r.status == RoomStatus.available).toList();
 
     CheckInFormData initData = CheckInFormData();
     final seededRooms = <RoomModel>[

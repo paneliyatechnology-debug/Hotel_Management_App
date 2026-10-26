@@ -297,7 +297,6 @@ class CheckInFormData {
     final signatures = folio.signatureUrls.map((url) => url.trim()).where((url) => url.isNotEmpty).toList();
     final adults = folio.adultCount ?? folio.numberOfGuests;
     final children = folio.childCount ?? 0;
-    final guests = adults + children;
     final notes = (folio.guestNotes ?? folio.specialRequests ?? '').trim();
     final bookingId = int.tryParse(folio.id.trim()) != null
         ? folio.id.trim()
@@ -307,9 +306,45 @@ class CheckInFormData {
         ? (folio.extraBed ? 1 : 0)
         : (folio.extraCharges / 500).round().clamp(0, 20).toInt();
 
+    // 1. Resolve Primary Guest Name
+    var primaryName = (folio.guestName == 'Guest' ? '' : folio.guestName).trim();
+    if (primaryName.isEmpty && folio.guests.isNotEmpty) {
+      primaryName = folio.guests.first.name.trim();
+    }
+
+    // 2. Resolve Additional / Accompanying Guests from folio.guests and secondaryGuestName
+    final otherGuestNames = <String>[];
+    final secondary = (folio.secondaryGuestName ?? '').trim();
+    if (secondary.isNotEmpty) {
+      otherGuestNames.add(secondary);
+    }
+    for (final bg in folio.guests) {
+      final name = bg.name.trim();
+      if (name.isEmpty) continue;
+      // Skip if it's the primary guest (displayOrder == 1 or matches primaryName)
+      if (bg.displayOrder == 1 || (primaryName.isNotEmpty && name.toLowerCase() == primaryName.toLowerCase() && otherGuestNames.isEmpty)) {
+        continue;
+      }
+      if (!otherGuestNames.contains(name)) {
+        otherGuestNames.add(name);
+      }
+    }
+
+    final String? secondGuest = otherGuestNames.isNotEmpty ? otherGuestNames.first : null;
+    final accompanyingList = otherGuestNames.skip(1).map((n) => AccompanyingGuest(name: n)).toList();
+    final totalGuests = (1 + otherGuestNames.length) > (adults + children)
+        ? (1 + otherGuestNames.length)
+        : (adults + children);
+
+    final keycode = (folio.keycardNumber != null &&
+            folio.keycardNumber!.trim().isNotEmpty &&
+            folio.keycardNumber!.trim().toLowerCase() != 'null')
+        ? folio.keycardNumber!.trim()
+        : room.keyCode.trim();
+
     return CheckInFormData(
-      partyType: guests >= 3 ? 'Family / Group' : (guests == 2 ? 'Couple (2 Guests)' : 'Solo Guest'),
-      guestFullName: folio.guestName == 'Guest' ? '' : folio.guestName,
+      partyType: totalGuests >= 3 ? 'Family / Group' : (totalGuests == 2 ? 'Couple (2 Guests)' : 'Solo Guest'),
+      guestFullName: primaryName,
       idType: _wizardIdType(folio.idType),
       idNumber: folio.idNumber,
       nationality: folio.nationality.isEmpty ? 'Indian' : folio.nationality,
@@ -317,7 +352,8 @@ class CheckInFormData {
       idBackPhotoUrl: photos.length > 1 ? photos[1] : null,
       idPhotos: photos,
       isIdVerified: folio.isGovtIdVerified || photos.isNotEmpty,
-      secondGuestName: folio.secondaryGuestName,
+      secondGuestName: secondGuest,
+      accompanyingGuests: accompanyingList,
       selectedRoomId: apiRoomId.isNotEmpty ? apiRoomId : room.id,
       selectedRoomIds: [if ((apiRoomId.isNotEmpty ? apiRoomId : room.id).trim().isNotEmpty) (apiRoomId.isNotEmpty ? apiRoomId : room.id)],
       selectedRoomNumber: room.roomNumber,
@@ -329,18 +365,19 @@ class CheckInFormData {
       isRoomPreLocked: true,
       checkInDate: checkIn,
       checkOutDate: checkOut,
-      numberOfGuests: guests < 1 ? 1 : guests,
+      numberOfGuests: totalGuests < 1 ? 1 : totalGuests,
       extraBeds: extraBeds,
       savedChildCount: children < 0 ? 0 : children,
       contactPhone: folio.phone,
       email: folio.email,
       residentialAddress: folio.address ?? '',
       specialRequests: notes,
+      gstNumber: folio.gstNumber,
       paymentMode: _wizardPaymentMode(folio.paymentMode),
       advancePaid: folio.advancePaid,
       discountAmount: folio.discount,
       transactionRef: notes,
-      assignedKeycardNumber: room.keyCode.trim(),
+      assignedKeycardNumber: keycode,
       agreeTermsAndSignature: true,
       isSignatureCaptured: signatures.isNotEmpty,
       signaturePhotoPath: signatures.isNotEmpty ? signatures.first : null,

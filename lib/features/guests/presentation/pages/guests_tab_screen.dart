@@ -10,7 +10,12 @@ import '../widgets/guest_skeleton_loader.dart';
 import 'guest_details_screen.dart';
 
 class GuestsTabScreen extends StatefulWidget {
-  const GuestsTabScreen({super.key});
+  final bool showAppBar;
+
+  const GuestsTabScreen({
+    super.key,
+    this.showAppBar = false,
+  });
 
   @override
   State<GuestsTabScreen> createState() => _GuestsTabScreenState();
@@ -37,6 +42,22 @@ class _GuestsTabScreenState extends State<GuestsTabScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.neutral50,
+      appBar: widget.showAppBar
+          ? AppBar(
+              title: Text(
+                'Guest List',
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                  color: const Color(0xFF0F172A),
+                ),
+              ),
+              backgroundColor: Colors.white,
+              elevation: 0,
+              surfaceTintColor: Colors.white,
+              iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
+            )
+          : null,
       body: SafeArea(
         child: BlocBuilder<GuestsBloc, GuestsState>(
           builder: (context, state) {

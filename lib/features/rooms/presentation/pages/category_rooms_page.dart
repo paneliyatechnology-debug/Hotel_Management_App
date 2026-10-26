@@ -18,6 +18,7 @@ import '../../../dashboard/presentation/widgets/modern_room_bottom_sheet.dart';
 import '../../../check_in_wizard/data/models/check_in_form_data.dart';
 import '../../../folios/presentation/widgets/checkout_settlement_dialog.dart';
 import '../../data/models/room_model.dart';
+import '../widgets/room_quick_status_dialog.dart';
 
 class CategoryRoomsPage extends StatefulWidget {
   final String categoryName;
@@ -76,9 +77,6 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
         .toList();
   }
 
-  void _openGuestForm(RoomModel room) {
-    _openGuestFormForRooms([room]);
-  }
 
   void _openGuestFormForRooms(List<RoomModel> rooms) {
     if (rooms.isEmpty) return;
@@ -763,19 +761,15 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
               _checkoutOccupiedRoom(room);
             } else if (isCleaning) {
               _confirmMarkAvailable(room);
-            } else {
-              ModernRoomBottomSheet.show(
+            }
+          },
+          onLongPress: () {
+            if (room.status == RoomStatus.available ||
+                room.status == RoomStatus.cleaning ||
+                room.status == RoomStatus.maintenance) {
+              showRoomQuickStatusDialog(
                 context: context,
                 room: room,
-                onStatusChanged: (newStatus) {
-                  context.read<DashboardBloc>().add(
-                        ChangeRoomStatusDashboardEvent(
-                          roomId: room.id,
-                          newStatus: newStatus,
-                        ),
-                      );
-                },
-                onExpressCheckIn: () => _openGuestForm(room),
               );
             }
           },
@@ -961,10 +955,12 @@ class _CategoryRoomsPageState extends State<CategoryRoomsPage> {
                                     label: 'Mark as Available',
                                     icon: Icons.check_circle_rounded,
                                   )
-                                : _roomActionButton(
-                                    label: 'Manage',
-                                    icon: Icons.tune_rounded,
-                                  ),
+                                : isMaintenance
+                                    ? const SizedBox(height: 30)
+                                    : _roomActionButton(
+                                        label: 'Manage',
+                                        icon: Icons.tune_rounded,
+                                      ),
                   ],
                 ),
               ],

@@ -17,6 +17,7 @@ import '../bloc/dashboard_event.dart';
 import '../live/room_live_hub.dart';
 import '../widgets/dashboard_shimmer_loader.dart';
 import '../widgets/modern_room_bottom_sheet.dart';
+import '../../../rooms/presentation/widgets/room_quick_status_dialog.dart';
 
 class StatusRoomsMemory {
   static final Map<String, List<RoomModel>> roomsByStatus = {};
@@ -185,24 +186,6 @@ class _StatusRoomsPageState extends State<StatusRoomsPage> {
     }
   }
 
-  void _openRoomActions(RoomModel room) {
-    ModernRoomBottomSheet.show(
-      context: context,
-      room: room,
-      onStatusChanged: (newStatus) async {
-        try {
-          await context.read<DashboardBloc>().repository.updateRoomStatus(room.id, newStatus);
-          await _refreshLists();
-        } catch (e) {
-          if (!mounted) return;
-          AppSnackBar.showError(context, e.toString().replaceFirst('Exception: ', ''));
-        }
-      },
-      onExpressCheckIn: () => _openGuestForm(room),
-      onCheckout: () => _checkoutOccupiedRoom(room),
-    );
-  }
-
   void _onRoomTap(RoomModel room) {
     if (room.status == RoomStatus.available) {
       _openGuestForm(room);
@@ -210,8 +193,6 @@ class _StatusRoomsPageState extends State<StatusRoomsPage> {
       _checkoutOccupiedRoom(room);
     } else if (room.status == RoomStatus.cleaning) {
       _confirmMarkAvailable(room);
-    } else {
-      _openRoomActions(room);
     }
   }
 
@@ -288,6 +269,19 @@ class _StatusRoomsPageState extends State<StatusRoomsPage> {
                             return _StatusRoomCard(
                               room: room,
                               onTap: () => _onRoomTap(room),
+                              onLongPress: () async {
+                                if (room.status == RoomStatus.available ||
+                                    room.status == RoomStatus.cleaning ||
+                                    room.status == RoomStatus.maintenance) {
+                                  final updated = await showRoomQuickStatusDialog(
+                                    context: context,
+                                    room: room,
+                                  );
+                                  if (updated == true && mounted) {
+                                    _refreshLists();
+                                  }
+                                }
+                              },
                             );
                           },
                         ),
@@ -299,8 +293,13 @@ class _StatusRoomsPageState extends State<StatusRoomsPage> {
 class _StatusRoomCard extends StatelessWidget {
   final RoomModel room;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
-  const _StatusRoomCard({required this.room, required this.onTap});
+  const _StatusRoomCard({
+    required this.room,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -363,6 +362,7 @@ class _StatusRoomCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: onTap,
+          onLongPress: onLongPress,
           borderRadius: BorderRadius.circular(14),
           child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
@@ -524,10 +524,12 @@ class _StatusRoomCard extends StatelessWidget {
                                           label: 'Mark as Available',
                                           icon: Icons.check_circle_rounded,
                                         )
-                                      : _roomActionButton(
-                                          label: 'Manage',
-                                          icon: Icons.tune_rounded,
-                                        ),
+                                      : isMaintenance
+                                          ? const SizedBox(height: 30)
+                                          : _roomActionButton(
+                                              label: 'Manage',
+                                              icon: Icons.tune_rounded,
+                                            ),
                         ],
                       ),
                     ],

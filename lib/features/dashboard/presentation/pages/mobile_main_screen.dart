@@ -18,11 +18,10 @@ import '../bloc/dashboard_state.dart';
 import '../widgets/kpi_metrics_grid.dart';
 import '../widgets/modern_mobile_header.dart';
 import 'status_rooms_page.dart';
-import '../widgets/dashboard_period_summary_card.dart';
+import '../widgets/hotel_admin_telemetry_cards.dart';
 import '../widgets/recent_check_in_out_section.dart';
 import 'hotel_admin_dashboard_view.dart';
 import '../widgets/dashboard_shimmer_loader.dart';
-import '../../domain/repositories/dashboard_repository.dart';
 import '../../../guests/presentation/pages/guests_tab_screen.dart';
 import '../../../more/presentation/pages/gst_report_page.dart';
 import '../../../more/presentation/pages/receptionist_more_tab.dart';
@@ -53,7 +52,6 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
   String _resortName = '';
   late String _userRole;
   final GlobalKey<HotelAdminDashboardViewState> _adminDashboardKey = GlobalKey();
-  final GlobalKey<DashboardPeriodSummaryCardState> _receptionistSummaryKey = GlobalKey();
 
   bool get _isHotelAdmin => _userRole == 'HOTEL_ADMIN';
 
@@ -543,11 +541,54 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
       color: AppColors.primary,
       onRefresh: () async {
         context.read<DashboardBloc>().add(RefreshDashboardDataEvent());
-        await (_receptionistSummaryKey.currentState?.reload() ?? Future<void>.value());
       },
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 10),
         children: [
+          // 1. Admin Top 4 Cards (Financial & Revenue Telemetry)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: HotelAdminTelemetryCards(
+              stats: state.stats,
+              onRevenueTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AdminDailyCollectionsPage(
+                      initialPreset: AdminCollectionsPreset.today,
+                    ),
+                  ),
+                );
+              },
+              onWeeklyTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AdminDailyCollectionsPage(
+                      initialPreset: AdminCollectionsPreset.week,
+                    ),
+                  ),
+                );
+              },
+              onGuestsTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const GuestsTabScreen(showAppBar: true),
+                  ),
+                );
+              },
+              onMonthlyTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AdminDailyCollectionsPage(
+                      initialPreset: AdminCollectionsPreset.month,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
           // KPI Metric Slider
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -612,16 +653,6 @@ class _MobileMainScreenState extends State<MobileMainScreen> {
                       MaterialPageRoute(
                         builder: (_) => StatusRoomsPage(title: title, status: status),
                       ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 14),
-                DashboardPeriodSummaryCard(
-                  key: _receptionistSummaryKey,
-                  loader: ({required DateTime startDate, required DateTime endDate}) {
-                    return DashboardRepository().fetchDashboardSummary(
-                      startDate: startDate,
-                      endDate: endDate,
                     );
                   },
                 ),

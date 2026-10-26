@@ -11,6 +11,7 @@ class HotelStatsModel {
   final int checkedInToday;
   final double monthRevenue;
   final double outstandingDue;
+  final double weeklyRevenue;
   final int occupancyRatePercentage;
   final int totalPhysicalRooms;
   final int activeStaffCount;
@@ -31,6 +32,7 @@ class HotelStatsModel {
     this.checkedInToday = 0,
     this.monthRevenue = 0.0,
     this.outstandingDue = 0.0,
+    this.weeklyRevenue = 0.0,
     this.occupancyRatePercentage = -1,
     this.totalPhysicalRooms = 0,
     this.activeStaffCount = 0,
@@ -87,6 +89,7 @@ class HotelStatsModel {
     int? checkedInToday,
     double? monthRevenue,
     double? outstandingDue,
+    double? weeklyRevenue,
     int? occupancyRatePercentage,
     int? totalPhysicalRooms,
     int? activeStaffCount,
@@ -107,6 +110,7 @@ class HotelStatsModel {
       checkedInToday: checkedInToday ?? this.checkedInToday,
       monthRevenue: monthRevenue ?? this.monthRevenue,
       outstandingDue: outstandingDue ?? this.outstandingDue,
+      weeklyRevenue: weeklyRevenue ?? this.weeklyRevenue,
       occupancyRatePercentage: occupancyRatePercentage ?? this.occupancyRatePercentage,
       totalPhysicalRooms: totalPhysicalRooms ?? this.totalPhysicalRooms,
       activeStaffCount: activeStaffCount ?? this.activeStaffCount,

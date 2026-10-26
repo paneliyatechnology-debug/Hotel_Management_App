@@ -89,7 +89,7 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
       'Total: ${CurrencyFormatter.format(folio.totalAmount)}',
       'Paid: ${CurrencyFormatter.format(folio.advancePaid)}',
       'Pending: ${CurrencyFormatter.format(folio.pendingAmount)}',
-      'Payment: ${folio.paymentMode}',
+      if (folio.hasPayment && folio.paymentMode.isNotEmpty) 'Payment: ${folio.paymentMode}',
       if ((folio.guestNotes ?? '').trim().isNotEmpty) 'Notes: ${folio.guestNotes}',
     ];
     final text = Uri.encodeComponent(lines.join('\n'));
@@ -204,7 +204,7 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
     final paid = folio.paidAmount > 0 ? folio.paidAmount : folio.advancePaid;
     final balance = folio.pendingAmount;
     final imageCount = folio.idImageUrls.length + folio.signatureUrls.length;
-    final paymentCount = folio.payments.isNotEmpty ? folio.payments.length : (paid > 0 ? 1 : 0);
+    final paymentCount = folio.payments.length;
     final roomLine = _roomLine(folio);
 
     return ColoredBox(
@@ -549,6 +549,8 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
               _kv('Check-Out Date & Time', checkOut),
               _kv('Stay Duration', '$nights Night${nights == 1 ? '' : 's'}'),
               _kv('Number of Guests', '$adults Adult${adults == 1 ? '' : '(s)'}'),
+              if (folio.guests.isNotEmpty)
+                _kv('All Guests', folio.guests.map((g) => g.name).join(', ')),
               _kv('Address', (folio.address ?? '').trim().isEmpty ? '—' : folio.address!.trim()),
               const SizedBox(height: 8),
               Text('Special Requests / Notes', style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF64748B))),
@@ -566,6 +568,47 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
             ],
           ),
         ),
+        if (folio.guests.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _card(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _sectionTitle('Guests (${folio.guests.length})'),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDFA),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: const Color(0xFF99F6E4)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.people_alt_rounded, size: 13, color: Color(0xFF0F766E)),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${folio.guests.length} Registered',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF0F766E),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ..._buildGuestRows(folio.guests),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         _card(
           child: Column(
@@ -606,21 +649,22 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
                 ),
               ),
               _metaRow('Booking Date', DateFormatter.formatDate(folio.checkInDate)),
-              _metaRow(
-                'Payment Method',
-                folio.paymentMode.isEmpty ? '—' : folio.paymentMode.toUpperCase(),
-                valueWidget: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    folio.paymentMode.isEmpty ? '—' : folio.paymentMode.toUpperCase(),
-                    style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: const Color(0xFF334155)),
+              if (folio.hasPayment && folio.paymentMode.isNotEmpty)
+                _metaRow(
+                  'Payment Method',
+                  folio.paymentMode.toUpperCase(),
+                  valueWidget: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      folio.paymentMode.toUpperCase(),
+                      style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: const Color(0xFF334155)),
+                    ),
                   ),
                 ),
-              ),
               _metaRow('Handled By (Front Desk)', (folio.createdByName ?? '').trim().isEmpty ? 'Receptionist' : folio.createdByName!),
             ],
           ),
@@ -661,11 +705,108 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
           Row(
             children: [
               Expanded(child: valueWidget ?? Text(value, style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)))),
-              if (trailing != null) trailing,
+              ?trailing,
             ],
           ),
           const SizedBox(height: 8),
           const Divider(height: 1, color: Color(0xFFF1F5F9)),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildGuestRows(List<BookingGuestModel> guests) {
+    final rows = <List<MapEntry<int, BookingGuestModel>>>[];
+    final entries = guests.asMap().entries.toList();
+    for (var i = 0; i < entries.length; i += 3) {
+      rows.add(entries.sublist(i, (i + 3 > entries.length) ? entries.length : i + 3));
+    }
+
+    return rows.map((row) {
+      final isLastRow = row == rows.last;
+      return Padding(
+        padding: EdgeInsets.only(bottom: isLastRow ? 0 : 8),
+        child: Row(
+          children: [
+            for (var i = 0; i < 3; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              if (i < row.length)
+                Expanded(
+                  child: _buildGuestTile(row[i].value, row[i].key),
+                )
+              else
+                const Expanded(child: SizedBox()),
+            ],
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  Widget _buildGuestTile(BookingGuestModel guest, int index) {
+    final isPrimary = guest.displayOrder == 1 || index == 0;
+    final displayOrder = guest.displayOrder > 0 ? guest.displayOrder : (index + 1);
+
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+      decoration: BoxDecoration(
+        color: isPrimary ? const Color(0xFFF0FDFA) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isPrimary ? const Color(0xFF99F6E4) : const Color(0xFFE2E8F0),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: isPrimary ? const Color(0xFF0F766E) : const Color(0xFFE2E8F0),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              '$displayOrder',
+              style: GoogleFonts.inter(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: isPrimary ? Colors.white : const Color(0xFF475569),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  guest.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: isPrimary ? FontWeight.w800 : FontWeight.w600,
+                    color: const Color(0xFF0F172A),
+                  ),
+                ),
+                if (isPrimary)
+                  Text(
+                    'Primary',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F766E),
+                    ),
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -868,30 +1009,54 @@ class _GuestFolioDetailsViewState extends State<GuestFolioDetailsView> {
 
   // TAB 3 — Payment Ledger
   Widget _buildPaymentLedgerTab(GuestFolioModel folio) {
-    final paid = folio.paidAmount > 0 ? folio.paidAmount : folio.advancePaid;
-    final rows = folio.payments.isNotEmpty
-        ? folio.payments
-        : (paid > 0
-            ? [
-                PaymentRecordModel(
-                  id: folio.receiptNumber ?? 'ADVANCE',
-                  date: folio.actualCheckIn ?? folio.checkInDate,
-                  amount: paid,
-                  paymentMethod: folio.paymentMode.isNotEmpty ? folio.paymentMode : 'UPI',
-                  reference: 'Booking',
-                  status: folio.paymentStatusLabel,
-                ),
-              ]
-            : <PaymentRecordModel>[]);
+    final rows = folio.payments;
 
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _sectionTitle('Payment Receipts & Transaction Ledger'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _sectionTitle('Payment Receipts & Transaction Ledger'),
+              if (rows.isNotEmpty) _countBadge(rows.length),
+            ],
+          ),
           const SizedBox(height: 12),
           if (rows.isEmpty)
-            Text('No payment receipts yet.', style: GoogleFonts.inter(fontSize: 12.5, color: const Color(0xFF94A3B8)))
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              alignment: Alignment.center,
+              child: Column(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFF1F5F9),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.receipt_long_outlined, size: 24, color: Color(0xFF94A3B8)),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'No Payment Records',
+                    style: GoogleFonts.inter(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF475569),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'No payment receipts or transactions recorded for this booking.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontSize: 11.5, color: const Color(0xFF94A3B8)),
+                  ),
+                ],
+              ),
+            )
           else
             ...rows.map((p) {
               return Container(
@@ -1203,13 +1368,11 @@ class _BookingNetworkImage extends StatelessWidget {
   final String url;
   final double height;
   final IconData icon;
-  final BoxFit fit;
 
   const _BookingNetworkImage({
     required this.url,
     required this.height,
     required this.icon,
-    this.fit = BoxFit.contain,
   });
 
   @override
@@ -1220,7 +1383,7 @@ class _BookingNetworkImage extends StatelessWidget {
       height: height,
       child: Image.network(
         url,
-        fit: fit,
+        fit: BoxFit.contain,
         alignment: Alignment.center,
         cacheWidth: cacheWidth > 0 ? cacheWidth : null,
         loadingBuilder: (context, child, progress) {
@@ -1236,7 +1399,7 @@ class _BookingNetworkImage extends StatelessWidget {
             ),
           );
         },
-        errorBuilder: (_, __, ___) => Center(
+        errorBuilder: (context, error, stackTrace) => Center(
           child: Icon(icon, color: const Color(0xFF0F766E)),
         ),
       ),

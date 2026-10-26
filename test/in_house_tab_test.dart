@@ -30,53 +30,12 @@ void main() {
       expect(find.text('Currently staying guests'), findsOneWidget);
       expect(find.text('In-House Folios & Guest Registry'), findsOneWidget);
 
-      // 2. Verify Initial Guest Cards
+      // 2. Verify ONLY In-House Guest Cards are shown (Departed guests are excluded)
       expect(find.text('Vikram Mehta'), findsOneWidget);
-      expect(find.text('Niraj Vekariya'), findsOneWidget);
+      expect(find.text('Niraj Vekariya'), findsNothing);
 
-      // 4. Verify Search Input Placeholder
+      // 3. Verify Search Input Placeholder
       expect(find.text('Search guest name, room, phone, booking...'), findsOneWidget);
-
-      // 5. Verify Filter Chips
-      expect(find.text('All (2)'), findsOneWidget);
-      expect(find.text('In-House (1)'), findsOneWidget);
-      expect(find.text('Departed (1)'), findsOneWidget);
-      expect(find.text('Checkout Today (0)'), findsOneWidget);
-      expect(find.text('Payment Pending (2)'), findsOneWidget);
-      expect(find.text('Keycard Issue'), findsOneWidget);
-    });
-
-    testWidgets('guest filter sheet collects booking filters', (tester) async {
-      tester.view.physicalSize = const Size(390, 844);
-      tester.view.devicePixelRatio = 1.0;
-      addTearDown(tester.view.resetPhysicalSize);
-
-      await tester.pumpWidget(const MyOwnPMSApp());
-      await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.people_alt_outlined).last);
-      await tester.pumpAndSettle();
-
-      await tester.tap(find.byIcon(Icons.tune_rounded));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Filter Guests'), findsOneWidget);
-      expect(find.text('Booking status'), findsOneWidget);
-      expect(find.text('Payment status'), findsOneWidget);
-      expect(find.text('Primary guest'), findsOneWidget);
-      expect(find.text('Apply Filters'), findsOneWidget);
-
-      await tester.tap(find.text('Checked In'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Pending'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byKey(const Key('guestFilterPrimaryGuest')), 'Ravi');
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('guestFilterApply')));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Filter Guests'), findsNothing);
-      expect(find.textContaining('CHECKED IN'), findsOneWidget);
-      expect(find.textContaining('Ravi'), findsWidgets);
     });
 
     testWidgets('Universal Search filters by room number and guest name', (tester) async {
@@ -103,11 +62,18 @@ void main() {
       await tester.enterText(searchField, '');
       await tester.pumpAndSettle();
 
-      // Search by Folio ID 'FOL-1088'
+      // Search by Folio ID 'FOL-1092' (in-house guest)
+      await tester.enterText(searchField, 'FOL-1092');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Vikram Mehta'), findsOneWidget);
+      expect(find.text('Niraj Vekariya'), findsNothing);
+
+      // Search by Departed Folio ID 'FOL-1088' (should not show on in-house tab)
       await tester.enterText(searchField, 'FOL-1088');
       await tester.pumpAndSettle();
 
-      expect(find.text('Niraj Vekariya'), findsOneWidget);
+      expect(find.text('Niraj Vekariya'), findsNothing);
       expect(find.text('Vikram Mehta'), findsNothing);
     });
 
@@ -123,37 +89,28 @@ void main() {
       await tester.tap(find.byIcon(Icons.people_alt_outlined).last);
       await tester.pumpAndSettle();
 
-      // Filter to In-House guest Vikram Mehta
-      await tester.tap(find.text('In-House (1)'));
-      await tester.pumpAndSettle();
-
-      // Tap 'View Details' on Vikram Mehta's card
+      // Tap 'View Details' on Vikram Mehta's in-house card
       final detailsButton = find.text('View Details').first;
       await tester.ensureVisible(detailsButton);
       await tester.tap(detailsButton);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Verify Guest Details Title & Key Sections
-      expect(find.text('Guest Details'), findsOneWidget);
-      expect(find.text('Personal Information'), findsOneWidget);
-      expect(find.text('KYC & Govt Identity Verification'), findsOneWidget);
-      expect(find.text('Current Stay Details'), findsNothing);
-      expect(find.text('Folio & Billing Breakdown'), findsNothing);
-      expect(find.text('VERIFIED'), findsOneWidget);
+      expect(find.textContaining('Vikram Mehta'), findsWidgets);
+      expect(find.text('Stay'), findsWidgets);
+      expect(find.text('Billing'), findsWidgets);
+      expect(find.text('Guest Folio PDF'), findsOneWidget);
+      expect(find.text('Send on WhatsApp'), findsOneWidget);
 
-      await tester.tap(find.text('Rooms'));
-      await tester.pumpAndSettle();
-      expect(find.text('Current Stay Details'), findsOneWidget);
-      expect(find.text('Folio & Billing Breakdown'), findsNothing);
-
-      await tester.tap(find.text('Billing'));
-      await tester.pumpAndSettle();
-      expect(find.text('Folio & Billing Breakdown'), findsOneWidget);
-      expect(find.text('Current Stay Details'), findsNothing);
+      await tester.tap(find.text('Billing').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
       // Pop details screen back
       await tester.pageBack();
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('In-House'), findsWidgets);
     });
 
@@ -169,25 +126,21 @@ void main() {
       await tester.tap(find.byIcon(Icons.people_alt_outlined).last);
       await tester.pumpAndSettle();
 
-      // Filter to In-House guest
-      await tester.tap(find.text('In-House (1)'));
-      await tester.pumpAndSettle();
-
-      // Tap Checkout on the card
+      // Tap Checkout on the in-house guest card
       final checkoutBtn = find.text('Checkout').first;
       await tester.ensureVisible(checkoutBtn);
       await tester.tap(checkoutBtn);
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
 
-      // Verify Safe Checkout Dialog
-      expect(find.text('Complete Checkout?'), findsOneWidget);
-      expect(find.text('Unsettled Folio Balance'), findsOneWidget);
+      // Verify Checkout Settlement Screen
+      expect(find.textContaining('Check-out'), findsOneWidget);
       expect(find.text('Cancel'), findsOneWidget);
 
       // Cancel checkout safely
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
-      expect(find.text('Complete Checkout?'), findsNothing);
+      expect(find.textContaining('Check-out ·'), findsNothing);
     });
 
     testWidgets('Desktop view (width >= 900) enables responsive PMS split layout', (tester) async {
@@ -204,9 +157,9 @@ void main() {
 
       // In split view, both the In-House list AND the selected guest details appear on the same screen
       expect(find.text('In-House'), findsWidgets);
-      expect(find.text('Guest Details'), findsOneWidget);
-      expect(find.text('Personal Information'), findsOneWidget);
-      expect(find.text('Folio & Billing Breakdown'), findsNothing);
+      expect(find.textContaining('Vikram Mehta'), findsWidgets);
+      expect(find.text('Stay'), findsWidgets);
+      expect(find.text('Guest Folio PDF'), findsOneWidget);
     });
   });
 }

@@ -35,7 +35,9 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
     _tariffRateController =
         TextEditingController(text: initialRate.toInt().toString());
     _discountController = TextEditingController(
-        text: widget.formData.discountAmount.toInt().toString());
+        text: widget.formData.discountAmount > 0
+            ? widget.formData.discountAmount.toInt().toString()
+            : '');
 
     final initialNights =
         widget.formData.totalNights > 0 ? widget.formData.totalNights : 1;
@@ -47,10 +49,13 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
     final initialFinal = taxable + gst;
     final initialAdvance = widget.formData.advancePaid > 0
         ? widget.formData.advancePaid
-        : initialFinal;
+        : (widget.formData.isEditingBooking ? 0.0 : initialFinal);
 
-    _advanceController =
-        TextEditingController(text: initialAdvance.toInt().toString());
+    _advanceController = TextEditingController(
+      text: initialAdvance > 0
+          ? initialAdvance.toInt().toString()
+          : (widget.formData.isEditingBooking ? '0' : initialFinal.toInt().toString()),
+    );
     _txnNoteController =
         TextEditingController(text: widget.formData.transactionRef);
 
@@ -342,6 +347,7 @@ class _Step3BillingSettlementState extends State<Step3BillingSettlement> {
                 child: _buildFloatingTextField(
                   controller: _discountController,
                   label: 'Special Discount (₹)',
+                  hintText: '0',
                   keyboardType: TextInputType.number,
                   onChanged: (_) => _onRateOrDiscountChanged(),
                 ),

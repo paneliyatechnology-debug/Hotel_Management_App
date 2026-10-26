@@ -9,13 +9,19 @@ import '../../data/repositories/hotel_admin_repository.dart';
 import '../widgets/dashboard_shimmer_loader.dart';
 import '../widgets/payment_method_collection_cards.dart';
 
-enum _DatePreset { today, yesterday, week, month, custom }
+enum AdminCollectionsPreset { today, yesterday, week, month, custom }
+typedef _DatePreset = AdminCollectionsPreset;
 
 /// Daily Collections — driven by GET /api/v1/dashboard/summary (no static data).
 class AdminDailyCollectionsPage extends StatefulWidget {
   final HotelAdminRepository? repository;
+  final AdminCollectionsPreset initialPreset;
 
-  const AdminDailyCollectionsPage({super.key, this.repository});
+  const AdminDailyCollectionsPage({
+    super.key,
+    this.repository,
+    this.initialPreset = AdminCollectionsPreset.today,
+  });
 
   @override
   State<AdminDailyCollectionsPage> createState() => _AdminDailyCollectionsPageState();
@@ -36,8 +42,25 @@ class _AdminDailyCollectionsPageState extends State<AdminDailyCollectionsPage> {
     super.initState();
     _repo = widget.repository ?? HotelAdminRepository();
     final today = _dateOnly(DateTime.now());
-    _startDate = today;
-    _endDate = today;
+    switch (widget.initialPreset) {
+      case AdminCollectionsPreset.week:
+        _preset = _DatePreset.week;
+        _startDate = today.subtract(Duration(days: today.weekday - 1));
+        _endDate = _startDate.add(const Duration(days: 6));
+      case AdminCollectionsPreset.month:
+        _preset = _DatePreset.month;
+        _startDate = DateTime(today.year, today.month, 1);
+        _endDate = DateTime(today.year, today.month + 1, 0);
+      case AdminCollectionsPreset.yesterday:
+        _preset = _DatePreset.yesterday;
+        _startDate = today.subtract(const Duration(days: 1));
+        _endDate = _startDate;
+      case AdminCollectionsPreset.today:
+      default:
+        _preset = _DatePreset.today;
+        _startDate = today;
+        _endDate = today;
+    }
     _loadSummary();
   }
 

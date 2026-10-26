@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:my_own_pms_system/core/widgets/metric_card.dart';
 import 'package:my_own_pms_system/features/dashboard/data/models/hotel_stats_model.dart';
 import 'package:my_own_pms_system/features/dashboard/domain/repositories/dashboard_repository.dart';
 import 'package:my_own_pms_system/features/dashboard/presentation/bloc/dashboard_bloc.dart';
@@ -101,13 +102,62 @@ void main() {
 
       expect(find.textContaining('Financial & Revenue Telemetry'), findsOneWidget);
       expect(find.text("Today's revenue"), findsOneWidget);
-      expect(find.text("Today's earnings"), findsOneWidget);
+      expect(find.text('Weekly revenue'), findsOneWidget);
       expect(find.text('Guests'), findsOneWidget);
       expect(find.text('This month'), findsOneWidget);
       expect(find.text('Live Real-time Audit'), findsOneWidget);
       expect(find.text('Live Counter'), findsNothing);
       expect(find.text('In-House'), findsNothing);
       expect(find.text('Monthly Total'), findsNothing);
+    });
+
+    testWidgets('HotelAdminTelemetryCards fires callbacks on card taps',
+        (WidgetTester tester) async {
+      bool revenueTapped = false;
+      bool weeklyTapped = false;
+      bool guestsTapped = false;
+      bool monthlyTapped = false;
+
+      const stats = HotelStatsModel(
+        availableVacant: 4,
+        occupiedInHouse: 0,
+        housekeepingQueue: 0,
+        maintenanceBlocked: 0,
+        totalInHouseGuests: 0,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: HotelAdminTelemetryCards(
+                stats: stats,
+                onRevenueTap: () => revenueTapped = true,
+                onWeeklyTap: () => weeklyTapped = true,
+                onGuestsTap: () => guestsTapped = true,
+                onMonthlyTap: () => monthlyTapped = true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text("Today's revenue"));
+      await tester.pump();
+      expect(revenueTapped, isTrue);
+
+      await tester.tap(find.text('Weekly revenue'));
+      await tester.pump();
+      expect(weeklyTapped, isTrue);
+
+      await tester.tap(find.text('Guests'));
+      await tester.pump();
+      expect(guestsTapped, isTrue);
+
+      await tester.tap(find.text('This month'));
+      await tester.pump();
+      expect(monthlyTapped, isTrue);
     });
 
     testWidgets('Hotel Admin Charts render Live Room Occupancy & Spline dynamics',
@@ -217,15 +267,32 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Revenue & Collection Dynamics'), findsOneWidget);
+    });
 
-      await tester.scrollUntilVisible(
-        find.text('Daily Revenue Goal'),
-        200,
-        scrollable: find.byType(Scrollable).first,
-      );
+    testWidgets('MobileMainScreen renders top 4 cards on RECEPTIONIST side without daily summary',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await tester.pumpWidget(createTestHotelAdminApp(role: 'RECEPTIONIST'));
       await tester.pumpAndSettle();
-      expect(find.text('Daily Revenue Goal'), findsOneWidget);
-      expect(find.text('Weekly Reception Traffic'), findsOneWidget);
+
+      // Top 4 Telemetry cards are present on Receptionist side
+      expect(find.byType(HotelAdminTelemetryCards), findsOneWidget);
+      expect(find.text("Today's revenue"), findsOneWidget);
+      expect(find.text('Weekly revenue'), findsOneWidget);
+      expect(find.widgetWithText(MetricCard, 'Guests'), findsOneWidget);
+      expect(find.text('This month'), findsOneWidget);
+
+      // Room status KPI grid is also present
+      expect(find.text('TODAY AT A GLANCE'), findsOneWidget);
+
+      // Daily summary tabs are NOT present
+      expect(find.text('Collected'), findsNothing);
+      expect(find.text('Outstanding'), findsNothing);
+      expect(find.text('By payment method'), findsNothing);
     });
   });
 }
+

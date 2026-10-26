@@ -29,7 +29,7 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
-  BookingListQuery _query = const BookingListQuery();
+  BookingListQuery _query = const BookingListQuery(bookingStatus: 'CHECKED_IN');
   Timer? _searchTimer;
   bool _isSearchFocused = false;
   String? _selectedFolioId;
@@ -50,7 +50,11 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        context.read<DashboardBloc>().add(LoadBookingsEvent(query: const BookingListQuery()));
+        context.read<DashboardBloc>().add(
+              LoadBookingsEvent(
+                query: const BookingListQuery(bookingStatus: 'CHECKED_IN'),
+              ),
+            );
       }
     });
 
@@ -167,15 +171,17 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
         if (state.status == DashboardStatus.loading && state.folios.isEmpty && state.allRooms.isEmpty) {
           return const InHouseShimmerLoader();
         }
-        final allFolios = state.folios;
-        final filteredFolios =
-            _isWidgetTest ? allFolios.where(_matchesLocalSearch).toList() : allFolios;
+        // Only show in-house guests on this screen
+        final inHouseFolios = state.folios
+            .where((folio) => folio.status == FolioStatus.inHouse)
+            .toList();
+        final filteredFolios = inHouseFolios.where(_matchesLocalSearch).toList();
 
         final isWideScreen = MediaQuery.of(context).size.width >= 900;
         final effectiveSelectedId = _selectedFolioId ??
             (filteredFolios.isNotEmpty
                 ? filteredFolios.first.id
-                : (allFolios.isNotEmpty ? allFolios.first.id : null));
+                : (inHouseFolios.isNotEmpty ? inHouseFolios.first.id : null));
 
         if (isWideScreen) {
           return Row(
@@ -300,7 +306,9 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'No Matching Folios Found',
+                      _searchQuery.isNotEmpty
+                          ? 'No Matching In-House Guests Found'
+                          : 'No In-House Guests Currently Staying',
                       style: GoogleFonts.inter(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700,
@@ -309,7 +317,9 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Try searching with a different guest name, phone, or booking ID.',
+                      _searchQuery.isNotEmpty
+                          ? 'Try searching with a different guest name, phone, or room number.'
+                          : 'Currently all guests have checked out or no rooms are occupied.',
                       style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary),
                       textAlign: TextAlign.center,
                     ),
@@ -442,18 +452,6 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
 
                 // Status Pill
                 _buildStatusPill(folio.status),
-
-                const SizedBox(width: 2),
-
-                // 3-dots more menu
-                InkWell(
-                  onTap: () => _showFolioQuickActions(context, folio),
-                  borderRadius: BorderRadius.circular(8),
-                  child: const Padding(
-                    padding: EdgeInsets.all(2),
-                    child: Icon(Icons.more_vert_rounded, size: 18, color: Color(0xFF64748B)),
-                  ),
-                ),
               ],
             ),
 
@@ -761,67 +759,6 @@ class _InHouseFoliosPageState extends State<InHouseFoliosPage>
           ],
         ),
       ),
-    );
-  }
-
-  void _showFolioQuickActions(BuildContext context, GuestFolioModel folio) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (bottomSheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFCBD5E1),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  folio.guestName,
-                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
-                ),
-                Text(
-                  '${folio.assignedRoom} • ${folio.roomType}',
-                  style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B)),
-                ),
-                const SizedBox(height: 12),
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.description_outlined, color: Color(0xFF0F766E)),
-                  title: Text('View Full Details', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600)),
-                  onTap: () {
-                    Navigator.pop(bottomSheetContext);
-                    _showFolioDetails(context, folio);
-                  },
-                ),
-                if (folio.status == FolioStatus.inHouse)
-                  ListTile(
-                    leading: const Icon(Icons.logout_rounded, color: Color(0xFFDC2626)),
-                    title: Text('Checkout Guest', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: const Color(0xFFDC2626))),
-                    onTap: () {
-                      Navigator.pop(bottomSheetContext);
-                      _confirmCheckout(context, folio);
-                    },
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

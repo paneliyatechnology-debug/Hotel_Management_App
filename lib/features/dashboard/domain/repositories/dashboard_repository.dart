@@ -1517,7 +1517,12 @@ class DashboardRepository implements IDashboardRepository {
   /// GET /api/v1/bookings/{id}. `data` is one booking object.
   @override
   Future<GuestFolioModel?> fetchBooking(String bookingId) async {
-    if (_shouldSkipLiveNetwork) return null;
+    if (_shouldSkipLiveNetwork) {
+      final id = bookingId.trim();
+      return _folios
+          .where((f) => f.id == id || f.bookingId == id || f.effectiveBookingId == id)
+          .firstOrNull;
+    }
     final id = bookingId.trim();
     if (id.isEmpty) return null;
     try {
@@ -1696,7 +1701,35 @@ class DashboardRepository implements IDashboardRepository {
     List<String> roomNumbers,
     String? notes,
   })?> fetchBookingSettlement(String bookingId) async {
-    if (_shouldSkipLiveNetwork) return null;
+    if (_shouldSkipLiveNetwork) {
+      final id = bookingId.trim();
+      final folio = _folios
+          .where((f) => f.id == id || f.bookingId == id || f.effectiveBookingId == id)
+          .firstOrNull;
+      if (folio != null) {
+        return (
+          roomCharges: folio.roomCharges > 0 ? folio.roomCharges : folio.totalAmount,
+          discount: folio.discount,
+          extraCharges: folio.extraCharges,
+          lateCharge: 0.0,
+          lateHours: 0.0,
+          taxable: folio.totalAmount,
+          cgstRate: folio.gstRate > 0 ? folio.gstRate / 2 : 9.0,
+          sgstRate: folio.gstRate > 0 ? folio.gstRate / 2 : 9.0,
+          cgst: folio.cgstAmount,
+          sgst: folio.sgstAmount,
+          total: folio.totalAmount,
+          paid: folio.advancePaid,
+          due: folio.pendingAmount,
+          guestName: folio.guestName,
+          phone: folio.phone,
+          bookingNumber: folio.bookingId ?? folio.id,
+          roomNumbers: [folio.assignedRoom],
+          notes: folio.guestNotes,
+        );
+      }
+      return null;
+    }
     final id = bookingId.trim();
     if (id.isEmpty) return null;
     try {

@@ -51,6 +51,32 @@ class StayActivityModel {
   });
 }
 
+class BookingGuestModel {
+  final int id;
+  final String name;
+  final int displayOrder;
+
+  const BookingGuestModel({
+    required this.id,
+    required this.name,
+    this.displayOrder = 1,
+  });
+
+  factory BookingGuestModel.fromJson(Map<String, dynamic> json) {
+    return BookingGuestModel(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      name: (json['name'] ?? json['guest_name'] ?? json['fullName'] ?? '').toString().trim(),
+      displayOrder: (json['display_order'] as num?)?.toInt() ?? (json['displayOrder'] as num?)?.toInt() ?? 1,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'display_order': displayOrder,
+  };
+}
+
 class GuestFolioModel {
   final String id;
   final String guestName;
@@ -116,6 +142,7 @@ class GuestFolioModel {
   final double cgstAmount;
   final double sgstAmount;
   final String? roomId;
+  final List<BookingGuestModel> guests;
 
   const GuestFolioModel({
     required this.id,
@@ -133,7 +160,7 @@ class GuestFolioModel {
     required this.roomRatePerNight,
     required this.advancePaid,
     required this.totalAmount,
-    this.paymentMode = 'UPI',
+    this.paymentMode = '',
     this.keycardNumber,
     this.address,
     this.gstNumber,
@@ -176,9 +203,12 @@ class GuestFolioModel {
     this.cgstAmount = 0,
     this.sgstAmount = 0,
     this.roomId,
+    this.guests = const [],
   });
 
   // Effective Financial Calculations
+  bool get hasPayment => payments.isNotEmpty || advancePaid > 0;
+
   double get pendingAmount {
     final diff = totalAmount - advancePaid;
     return diff > 0 ? diff : 0;
@@ -187,9 +217,9 @@ class GuestFolioModel {
   double get paidAmount => advancePaid;
 
   String get paymentStatusLabel {
+    if (paidAmount <= 0) return 'PENDING';
     if (pendingAmount <= 0) return 'PAID';
-    if (paidAmount > 0) return 'PARTIALLY PAID';
-    return 'PENDING';
+    return 'PARTIALLY PAID';
   }
 
   // Stay Calculations
@@ -294,6 +324,8 @@ class GuestFolioModel {
     String? bookingStatus,
     String? floor,
     int? numberOfGuests,
+    int? adultCount,
+    int? childCount,
     String? gender,
     DateTime? dateOfBirth,
     String? nationality,
@@ -324,6 +356,7 @@ class GuestFolioModel {
     double? cgstAmount,
     double? sgstAmount,
     String? roomId,
+    List<BookingGuestModel>? guests,
   }) {
     return GuestFolioModel(
       id: id ?? this.id,
@@ -352,8 +385,8 @@ class GuestFolioModel {
       bookingStatus: bookingStatus ?? this.bookingStatus,
       floor: floor ?? this.floor,
       numberOfGuests: numberOfGuests ?? this.numberOfGuests,
-      adultCount: this.adultCount,
-      childCount: this.childCount,
+      adultCount: adultCount ?? this.adultCount,
+      childCount: childCount ?? this.childCount,
       gender: gender ?? this.gender,
       dateOfBirth: dateOfBirth ?? this.dateOfBirth,
       nationality: nationality ?? this.nationality,
@@ -384,6 +417,7 @@ class GuestFolioModel {
       cgstAmount: cgstAmount ?? this.cgstAmount,
       sgstAmount: sgstAmount ?? this.sgstAmount,
       roomId: roomId ?? this.roomId,
+      guests: guests ?? this.guests,
     );
   }
 
@@ -437,19 +471,39 @@ class GuestFolioModel {
         ? roomNum
         : (roomNum.startsWith('#') ? 'Room $roomNum' : 'Room #$roomNum');
 
-    final guestName = guestData['fullName']?.toString() ??
-        guestData['name']?.toString() ??
-        json['primary_guest_name']?.toString() ??
-        json['guestName']?.toString() ??
-        'Guest';
+    String firstNonEmpty(List<dynamic> candidates, [String fallback = '']) {
+      for (final c in candidates) {
+        if (c != null) {
+          final s = c.toString().trim();
+          if (s.isNotEmpty && s.toLowerCase() != 'null') return s;
+        }
+      }
+      return fallback;
+    }
 
-    final email = guestData['email']?.toString() ?? json['email']?.toString() ?? '';
-    final phone = guestData['phone']?.toString() ??
-        guestData['mobileNumber']?.toString() ??
-        json['mobile_number']?.toString() ??
-        json['mobileNumber']?.toString() ??
-        json['phone']?.toString() ??
-        '';
+    final guestName = firstNonEmpty([
+      guestData['fullName'],
+      guestData['name'],
+      guestData['guest_name'],
+      json['primary_guest_name'],
+      json['primaryGuestName'],
+      json['guestName'],
+      json['guest_name'],
+    ], 'Guest');
+
+    final email = firstNonEmpty([
+      guestData['email'],
+      json['email'],
+    ]);
+
+    final phone = firstNonEmpty([
+      guestData['phone'],
+      guestData['mobileNumber'],
+      guestData['mobile_number'],
+      json['mobile_number'],
+      json['mobileNumber'],
+      json['phone'],
+    ]);
 
     final govtIdType = (guestData['idProof'] is Map
             ? guestData['idProof']['idType']?.toString()
@@ -488,12 +542,6 @@ class GuestFolioModel {
         (json['baseAmount'] as num?)?.toDouble() ??
         (json['total'] as num?)?.toDouble() ??
         (rate * nights);
-    final advance = (json['paid_amount'] as num?)?.toDouble() ??
-        (json['paidAmount'] as num?)?.toDouble() ??
-        (json['advancePaid'] as num?)?.toDouble() ??
-        (json['advancePayment'] as num?)?.toDouble() ??
-        (json['advance'] as num?)?.toDouble() ??
-        total;
 
     final bookingNum = json['booking_number']?.toString() ??
         json['bookingNumber']?.toString() ??
@@ -538,10 +586,33 @@ class GuestFolioModel {
 
     final receiptNum = json['receiptNumber']?.toString();
     final payments = _paymentHistory(json['payment_history'] ?? json['paymentHistory'], checkIn);
-    final paymentMethod = json['payment_method']?.toString() ??
+    final rawPaymentMethod = json['payment_method']?.toString() ??
         json['paymentMethod']?.toString() ??
-        json['paymentMode']?.toString() ??
-        (payments.isNotEmpty ? payments.first.paymentMethod : 'UPI');
+        json['paymentMode']?.toString();
+    final paymentMethod = (rawPaymentMethod != null &&
+            rawPaymentMethod.trim().isNotEmpty &&
+            rawPaymentMethod.trim() != 'null')
+        ? rawPaymentMethod.trim()
+        : (payments.isNotEmpty ? payments.first.paymentMethod : '');
+
+    final rawDue = (json['due_amount'] as num?)?.toDouble() ??
+        (json['dueAmount'] as num?)?.toDouble();
+    final rawPaid = (json['paid_amount'] as num?)?.toDouble() ??
+        (json['paidAmount'] as num?)?.toDouble() ??
+        (json['advancePaid'] as num?)?.toDouble() ??
+        (json['advancePayment'] as num?)?.toDouble() ??
+        (json['advance'] as num?)?.toDouble();
+
+    final double advance;
+    if (rawPaid != null) {
+      advance = rawPaid;
+    } else if (rawDue != null) {
+      advance = (total - rawDue).clamp(0.0, total);
+    } else if (payments.isNotEmpty) {
+      advance = payments.fold<double>(0.0, (sum, p) => sum + p.amount);
+    } else {
+      advance = 0.0;
+    }
     final tax = _amount(json['tax_amount'] ?? json['gst_amount'] ?? json['taxAmount'] ?? json['tax']);
     final discount = _amount(json['discount_amount'] ?? json['discountAmount'] ?? json['discount']);
     final roomCharges = _amount(json['base_amount'] ?? json['baseAmount'] ?? json['roomCharges']);
@@ -551,6 +622,21 @@ class GuestFolioModel {
     String? createdByName;
     if (json['creator'] is Map) {
       createdByName = Map<String, dynamic>.from(json['creator'] as Map)['name']?.toString();
+    }
+
+    final rawGuests = json['guests'];
+    final guestsList = <BookingGuestModel>[];
+    if (rawGuests is List) {
+      for (final item in rawGuests) {
+        if (item is Map<String, dynamic>) {
+          guestsList.add(BookingGuestModel.fromJson(item));
+        } else if (item is Map) {
+          guestsList.add(BookingGuestModel.fromJson(Map<String, dynamic>.from(item)));
+        } else if (item is String && item.trim().isNotEmpty) {
+          guestsList.add(BookingGuestModel(id: 0, name: item.trim(), displayOrder: guestsList.length + 1));
+        }
+      }
+      guestsList.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
     }
 
     return GuestFolioModel(
@@ -599,6 +685,7 @@ class GuestFolioModel {
       cgstAmount: _amount(json['cgst_amount'] ?? json['cgstAmount']),
       sgstAmount: _amount(json['sgst_amount'] ?? json['sgstAmount']),
       roomId: roomId,
+      guests: guestsList,
     );
   }
 }

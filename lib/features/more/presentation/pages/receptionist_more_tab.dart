@@ -318,14 +318,6 @@ class ReceptionistMoreTab extends StatelessWidget {
             ? user.hotel.formattedAddress
             : '218, Arth Bussiness Center, Near SP Ring Road');
 
-    final checkInTime = user.hotel.settings.checkInTime.isNotEmpty
-        ? user.hotel.settings.checkInTime
-        : '14:00';
-    final checkOutTime = user.hotel.settings.checkOutTime.isNotEmpty
-        ? user.hotel.settings.checkOutTime
-        : '12:00';
-    final policyText = 'Check-In: $checkInTime | Check-Out: $checkOutTime';
-
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -442,18 +434,6 @@ class ReceptionistMoreTab extends StatelessWidget {
             title: 'Hotel Property',
             value: hotelName,
             subtitle: hotelAddress,
-          ),
-          const Divider(height: 1, indent: 62, endIndent: 18, color: Color(0xFFF8FAFC)),
-
-          // 4. Check-In / Out Policy Item
-          _buildUnifiedInfoTile(
-            context: context,
-            icon: Icons.access_time_rounded,
-            iconBg: const Color(0xFFFFFBEB),
-            iconColor: const Color(0xFFD97706),
-            title: 'Check-In / Out Policy',
-            value: policyText,
-            subtitle: 'Standard property front desk schedule',
           ),
 
           const SizedBox(height: 6),
