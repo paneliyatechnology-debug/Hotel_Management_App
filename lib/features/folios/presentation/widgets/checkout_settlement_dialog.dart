@@ -34,11 +34,11 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
   bool _settlementReady = false;
   bool _notesEdited = false;
   String? _paymentError;
-  String? _discountError;
   String _paymentMethod = 'CASH';
 
+  double? _settlementDiscount;
+
   late final TextEditingController _extraController;
-  late final TextEditingController _discountController;
   late final TextEditingController _lateHoursController;
   late final TextEditingController _lateChargeController;
   late final TextEditingController _notesController;
@@ -52,11 +52,9 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
   String _bookingNumber = '';
   List<String> _roomNumbers = const [];
 
+
   double get _extraCharges => _parseAmount(_extraController.text) ?? 0;
-  double get _discountRaw => _parseAmount(_discountController.text) ?? 0;
-  double get _maxDiscount => _roomCharges < 0 ? 0 : _roomCharges;
-  double get _discount =>
-      _discountRaw > _maxDiscount ? _maxDiscount : _discountRaw;
+  double get _discount => (_settlementDiscount ?? widget.folio.discount).clamp(0.0, _roomCharges < 0 ? 0.0 : _roomCharges);
   double get _lateHours => _parseAmount(_lateHoursController.text) ?? 0;
   double get _lateCharge => _parseAmount(_lateChargeController.text) ?? 0;
 
@@ -90,19 +88,16 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
     _roomNumbers = initialRoom.isEmpty ? const [] : [initialRoom];
 
     _extraController = TextEditingController();
-    _discountController = TextEditingController();
     _lateHoursController = TextEditingController();
     _lateChargeController = TextEditingController();
     _notesController = TextEditingController();
     _setHintOnlyAmount(_extraController, folio.extraCharges);
-    _setHintOnlyAmount(_discountController, folio.discount);
     _loadSettlement();
   }
 
   @override
   void dispose() {
     _extraController.dispose();
-    _discountController.dispose();
     _lateHoursController.dispose();
     _lateChargeController.dispose();
     _notesController.dispose();
@@ -125,25 +120,12 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
     return double.tryParse(cleaned);
   }
 
-  String? _discountValidationError() {
-    final raw = _discountController.text.replaceAll(',', '').replaceAll('₹', '').trim();
-    if (raw.isEmpty) return null;
-    final amount = double.tryParse(raw);
-    if (amount == null || amount < 0) return 'Enter a valid discount';
-    if (amount > _maxDiscount + 0.009) {
-      return 'Discount cannot exceed room charges (${CurrencyFormatter.format(_maxDiscount)})';
-    }
-    return null;
-  }
-
   bool _validatePayment() {
     final paymentError = _paymentMethod.trim().isEmpty ? 'Select payment type' : null;
-    final discountError = _discountValidationError();
     setState(() {
       _paymentError = paymentError;
-      _discountError = discountError;
     });
-    return paymentError == null && discountError == null;
+    return paymentError == null;
   }
 
   Future<void> _loadSettlement() async {
@@ -151,6 +133,7 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
     if (!mounted) return;
     setState(() {
       if (settlement != null) {
+        _settlementDiscount = settlement.discount;
         _roomCharges = settlement.roomCharges;
         _advancePaid = settlement.paid;
         _cgstRate = settlement.cgstRate;
@@ -164,7 +147,6 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
           _roomNumbers = List<String>.from(settlement.roomNumbers);
         }
         _setHintOnlyAmount(_extraController, settlement.extraCharges);
-        _setHintOnlyAmount(_discountController, settlement.discount);
         _setHintOnlyAmount(_lateHoursController, settlement.lateHours);
         _setHintOnlyAmount(_lateChargeController, settlement.lateCharge);
         if (!_notesEdited) {
@@ -176,9 +158,7 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
   }
 
   void _onBillFieldChanged() {
-    setState(() {
-      _discountError = _discountValidationError();
-    });
+    setState(() {});
   }
 
   String _cleanRoomNumber(String raw) {
@@ -192,7 +172,13 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
     return double.parse(value.toStringAsFixed(2));
   }
 
-  InputDecoration _fieldDecoration({String hint = '', String? prefix, String? error, String? helper}) {
+  InputDecoration _fieldDecoration({
+    String hint = '',
+    String? prefix,
+    String? error,
+    String? helper,
+    bool enabled = true,
+  }) {
     return InputDecoration(
       hintText: hint,
       isDense: true,
@@ -200,15 +186,20 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
       prefixStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
       hintStyle: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w500, color: const Color(0xFF94A3B8)),
       helperText: helper,
-      helperStyle: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w500, color: const Color(0xFF64748B)),
+      helperStyle: GoogleFonts.inter(
+        fontSize: 10,
+        fontWeight: FontWeight.w500,
+        color: !enabled ? const Color(0xFF64748B) : const Color(0xFF64748B),
+      ),
       helperMaxLines: 1,
       errorText: error,
       errorStyle: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: const Color(0xFFDC2626)),
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
+      fillColor: enabled ? const Color(0xFFF8FAFC) : const Color(0xFFF1F5F9),
       contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+      disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF0F766E), width: 1.3)),
       errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFDC2626))),
       focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFDC2626), width: 1.3)),
@@ -222,22 +213,38 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
     String? error,
     bool enabled = true,
   }) {
+    final effectiveEnabled = enabled && !_isLoading;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: const Color(0xFF334155)),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: effectiveEnabled ? const Color(0xFF334155) : const Color(0xFF64748B),
+          ),
         ),
         const SizedBox(height: 4),
         TextField(
           controller: controller,
-          enabled: enabled && !_isLoading,
+          enabled: effectiveEnabled,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
           onChanged: (_) => _onBillFieldChanged(),
-          style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
-          decoration: _fieldDecoration(hint: '0', helper: error == null ? helper : null, error: error).copyWith(
+          style: GoogleFonts.inter(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w700,
+            color: effectiveEnabled ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+          ),
+          decoration: _fieldDecoration(
+            hint: '0',
+            helper: error == null ? helper : null,
+            error: error,
+            enabled: effectiveEnabled,
+          ).copyWith(
             hintText: '0',
             hintStyle: GoogleFonts.inter(
               fontSize: 13.5,
@@ -375,7 +382,6 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
       if (_guestPhone.trim().isNotEmpty) _guestPhone.trim(),
       'Folio $folioLabel',
     ].join(' · ');
-    final maxDiscountLabel = _roomCharges > 0 ? 'Max ${CurrencyFormatter.format(_roomCharges)}' : null;
     final collecting = _collectingNow;
     final confirmLabel = isCleared
         ? 'Confirm checkout'
@@ -514,25 +520,9 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
                           ),
                           child: Column(
                             children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: _labeledField(
-                                      label: 'Extra charges (₹)',
-                                      controller: _extraController,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: _labeledField(
-                                      label: 'Discount (₹)',
-                                      controller: _discountController,
-                                      helper: maxDiscountLabel,
-                                      error: _discountError,
-                                    ),
-                                  ),
-                                ],
+                              _labeledField(
+                                label: 'Extra charges (₹)',
+                                controller: _extraController,
                               ),
                               const SizedBox(height: 8),
                               Row(
@@ -639,11 +629,12 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
                                       label: 'Room charges (Before tax)',
                                       amount: CurrencyFormatter.format(_roomCharges),
                                     ),
-                                    _billLine(
-                                      label: 'Discount',
-                                      amount: '-${CurrencyFormatter.format(_discount)}',
-                                      amountColor: const Color(0xFF059669),
-                                    ),
+                                    if (_discount > 0)
+                                      _billLine(
+                                        label: 'Discount',
+                                        amount: '-${CurrencyFormatter.format(_discount)}',
+                                        amountColor: const Color(0xFF059669),
+                                      ),
                                     _billLine(
                                       label: 'Extra charges',
                                       amount: _extraCharges > 0
@@ -766,7 +757,7 @@ class _CheckoutSettlementDialogState extends State<CheckoutSettlementDialog> {
                         minimumSize: const Size.fromHeight(42),
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
-                      onPressed: _isLoading || !_settlementReady || _discountError != null
+                      onPressed: _isLoading || !_settlementReady
                           ? null
                           : _handleConfirmCheckout,
                       child: _isLoading
